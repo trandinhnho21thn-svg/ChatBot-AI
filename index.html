@@ -8,6 +8,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@700&family=Roboto:wght@400;500;700&family=Tahoma&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- SheetJS: đọc file Excel .xlsx -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
         :root {
             /* Default Theme: Ocean Blue */
@@ -87,9 +89,9 @@
         }
 
         .brand img {
-            height: 70px;
+            height: 80px;
             width: auto;
-            max-width: 280px;
+            max-width: 350px;
             object-fit: contain;
             background-color: #ffffff; /* Nền trắng giúp chữ đen nổi bật */
             padding: 4px 12px;         /* Khoảng cách để chữ không sát lề */
@@ -879,7 +881,7 @@
                 <i data-lucide="lock" style="width:20px;height:20px;"></i>
             </button>
             <div class="brand">
-                <img src="./logo.png" alt="Rapido - Phòng Bảo Hành" style="max-height: 50px; width: auto; max-width: 150px; object-fit: contain; background: white; padding: 4px; border-radius: 6px;" onerror="this.style.display='none'">
+                <img src="./logo.png" alt="Rapido - Phòng Bảo Hành" onerror="this.style.display='none'">
             </div>
         </div>
         <div class="author-info">
@@ -1027,14 +1029,22 @@
                     <div class="product-list">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                             <h3>Danh Sách Model</h3>
-                            <div style="display: flex; gap: 0.5rem;">
-                                <button class="btn btn-outline" onclick="exportData()" title="Xuất JSON">
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <button class="btn btn-outline" onclick="downloadTemplate()" title="Tải file mẫu JSON" style="font-size:0.78rem; gap:0.3rem; padding: 0.5rem 0.75rem; border-color: #10b981; color: #10b981;">
+                                    <i data-lucide="file-down" style="width:15px;height:15px;"></i>
+                                    File Mẫu
+                                </button>
+                                <button class="btn btn-outline" onclick="exportData()" title="Xuất toàn bộ dữ liệu JSON">
                                     <i data-lucide="download"></i>
                                 </button>
-                                <button class="btn btn-outline" onclick="document.getElementById('import-file').click()" title="Nhập JSON">
+                                <button class="btn btn-outline" onclick="document.getElementById('import-file').click()" title="Nhập dữ liệu từ Excel (.xlsx) hoặc JSON (.json)">
                                     <i data-lucide="upload"></i>
                                 </button>
-                                <input type="file" id="import-file" class="hidden" accept=".json" onchange="importData(event)">
+                                <button class="btn btn-outline" onclick="openBatchImageModal()" title="Gắn ảnh hàng loạt từ máy tính" style="border-color:#8b5cf6;color:#8b5cf6;">
+                                    <i data-lucide="images" style="width:18px;height:18px;"></i>
+                                </button>
+                                <input type="file" id="import-file" class="hidden" accept=".xlsx,.json" onchange="importData(event)">
+                                <input type="file" id="batch-image-files" class="hidden" accept="image/*" multiple onchange="handleBatchImages(event)">
                             </div>
                         </div>
                         
@@ -1086,7 +1096,7 @@
                     <div class="settings-group">
                         <h3><i data-lucide="shield-check"></i> Hướng Dẫn Kích Hoạt Bảo Hành</h3>
                         <textarea id="setting-warranty" rows="3" placeholder="Nhập hướng dẫn và nhắc nhở kích hoạt bảo hành..."></textarea>
-                        <button class="btn btn-primary" onclick="saveSettings()" style="margin-top: 0.5rem;">Lưu Cài Đặt</button>
+                        <button class="btn btn-primary" onclick="saveSettingsWithAlert()" style="margin-top: 0.5rem;">Lưu Cài Đặt</button>
                     </div>
                     <div class="settings-group">
                         <h3><i data-lucide="help-circle"></i> Câu Hỏi Chưa Trả Lời Được</h3>
@@ -1164,16 +1174,23 @@
         function loginAdmin() {
             const pass = document.getElementById('admin-password').value;
             if (pass === '1357924680') {
-                document.getElementById('admin-lock').classList.add('hidden');
-                document.getElementById('admin-content').classList.remove('hidden');
-                document.getElementById('login-error').style.display = 'none';
+                // Lưu session đăng nhập – tồn tại đến khi đóng tab
+                sessionStorage.setItem('rapido_admin_auth', '1');
+                unlockAdminUI();
                 document.getElementById('admin-password').value = '';
             } else {
                 document.getElementById('login-error').style.display = 'block';
             }
         }
 
+        function unlockAdminUI() {
+            document.getElementById('admin-lock').classList.add('hidden');
+            document.getElementById('admin-content').classList.remove('hidden');
+            document.getElementById('login-error').style.display = 'none';
+        }
+
         function logoutAdmin() {
+            sessionStorage.removeItem('rapido_admin_auth');
             document.getElementById('admin-lock').classList.remove('hidden');
             document.getElementById('admin-content').classList.add('hidden');
             const col = document.getElementById('admin-column');
@@ -1192,22 +1209,47 @@
             if (targetBtn) targetBtn.classList.add('active');
         }
 
-        // --- NÉN VÀ UPLOAD ẢNH ---
+        // --- NÉN VÀ UPLOAD ẢNH (Smart Compression) ---
+        // WebP nén tốt hơn JPEG 30-50% cùng chất lượng. Fallback sang JPEG nếu không hỗ trợ.
+        // Chỉ resize nếu ảnh vượt ngưỡng maxWidth/maxHeight, giữ nguyên nếu ảnh đã nhỏ.
+        const supportsWebP = (() => {
+            try {
+                const c = document.createElement('canvas');
+                c.width = 1; c.height = 1;
+                return c.toDataURL('image/webp').startsWith('data:image/webp');
+            } catch { return false; }
+        })();
+
         function compressImage(file, maxWidth, maxHeight, quality, callback) {
             const reader = new FileReader();
             reader.onload = function(e) {
                 const img = new Image();
                 img.onload = function() {
                     let w = img.width, h = img.height;
-                    if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
-                    if (h > maxHeight) { w = Math.round(w * maxHeight / h); h = maxHeight; }
+                    const needsResize = w > maxWidth || h > maxHeight;
+                    if (needsResize) {
+                        if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+                        if (h > maxHeight) { w = Math.round(w * maxHeight / h); h = maxHeight; }
+                    }
                     const canvas = document.createElement('canvas');
                     canvas.width = w; canvas.height = h;
                     const ctx = canvas.getContext('2d');
                     ctx.imageSmoothingEnabled = true;
                     ctx.imageSmoothingQuality = 'high';
+                    // Với những ảnh trong suốt (PNG) giữ nền trắng
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, w, h);
                     ctx.drawImage(img, 0, 0, w, h);
-                    callback(canvas.toDataURL('image/jpeg', quality));
+                    // WebP quality cao hơn 5% so với target vì WebP đã tự hiệu quả
+                    const fmt  = supportsWebP ? 'image/webp' : 'image/jpeg';
+                    const qual = supportsWebP ? Math.min(quality + 0.05, 1) : quality;
+                    const compressed = canvas.toDataURL(fmt, qual);
+                    // Nếu ảnh gốc nhỏ hơn kết quả nén thì dùng gốc (PNG/WebP nhỏ sẵn)
+                    if (!needsResize && compressed.length > e.target.result.length * 1.05) {
+                        callback(e.target.result);
+                    } else {
+                        callback(compressed);
+                    }
                 };
                 img.src = e.target.result;
             };
@@ -1592,6 +1634,186 @@
             currentModalProductId = null;
         }
 
+        // ═══════════════════════════════════════════
+        // GẮN ẢNH HÀNG LOẠT TỪ MÁY TÍNH
+        // ═══════════════════════════════════════════
+        function openBatchImageModal() {
+            if (products.length === 0) {
+                alert('Chưa có sản phẩm nào!\nHãy thêm sản phẩm hoặc import file Excel trước.');
+                return;
+            }
+
+            // Xây dựng danh sách sản phẩm cần gắn ảnh
+            const rows = products.map((p, i) => {
+                const hasImg  = p.image      ? '✅' : '❌';
+                const hasGImg = p.guideImage ? '✅' : '❌';
+                return `
+                <tr data-idx="${i}" class="batch-row">
+                    <td style="padding:0.5rem;font-weight:600;font-size:0.88rem;">${p.model}</td>
+                    <td style="padding:0.5rem;font-size:0.82rem;color:var(--text-muted);">${p.type || ''}</td>
+                    <td style="padding:0.5rem;text-align:center;">
+                        <span class="batch-img-status" id="bstat-sp-${i}">${hasImg}</span>
+                        <div style="margin-top:4px;">
+                            <button onclick="pickBatchImg(${i},'sp')" style="font-size:0.72rem;padding:2px 8px;border:1px solid var(--primary);border-radius:4px;background:transparent;color:var(--primary);cursor:pointer;">
+                                📷 Chọn ảnh SP
+                            </button>
+                        </div>
+                    </td>
+                    <td style="padding:0.5rem;text-align:center;">
+                        <span class="batch-img-status" id="bstat-hd-${i}">${hasGImg}</span>
+                        <div style="margin-top:4px;">
+                            <button onclick="pickBatchImg(${i},'hd')" style="font-size:0.72rem;padding:2px 8px;border:1px solid #8b5cf6;border-radius:4px;background:transparent;color:#8b5cf6;cursor:pointer;">
+                                📋 Chọn ảnh HD
+                            </button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+
+            const modal = document.createElement('div');
+            modal.id = 'batch-img-modal';
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+            <div class="modal-box" style="max-width:760px;">
+                <div class="modal-header" style="background:linear-gradient(135deg,#7c3aed,#a855f7);">
+                    <h3>🖼️ Gắn Ảnh Hàng Loạt Từ Máy Tính</h3>
+                    <button class="modal-close" onclick="closeBatchModal()">✕</button>
+                </div>
+                <div class="modal-body" style="padding:0;">
+                    <!-- Hướng dẫn nhanh -->
+                    <div style="background:#f5f3ff;border-bottom:1px solid #ddd6fe;padding:0.85rem 1.25rem;font-size:0.83rem;color:#5b21b6;">
+                        <strong>💡 Cách dùng:</strong>
+                        Nhấn <em>"Chọn ảnh SP"</em> hoặc <em>"Chọn ảnh HD"</em> cho từng model. 
+                        Hoặc nhấn nút <strong>"Tải nhiều ảnh cùng lúc"</strong> bên dưới – hệ thống tự ghép theo tên file.
+                        <br>Ảnh sẽ được <strong>nén thông minh</strong> (WebP/JPEG chất lượng cao), không vỡ không nhòe.
+                    </div>
+                    <!-- Nút tải nhiều ảnh -->
+                    <div style="padding:0.85rem 1.25rem;border-bottom:1px solid var(--border-color);display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+                        <button onclick="document.getElementById('batch-multi-input').click()"
+                            style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.5rem 1rem;background:linear-gradient(135deg,#7c3aed,#a855f7);color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:0.85rem;">
+                            📂 Tải nhiều ảnh cùng lúc (tự ghép tên)
+                        </button>
+                        <span style="font-size:0.78rem;color:var(--text-muted);">VD: file "RI-2000ES.jpg" → ghép vào model RI-2000ES</span>
+                        <input type="file" id="batch-multi-input" accept="image/*" multiple style="display:none"
+                            onchange="handleAutoMatchImages(event)">
+                    </div>
+                    <!-- Bảng sản phẩm -->
+                    <div style="overflow-y:auto;max-height:55vh;">
+                        <table style="width:100%;border-collapse:collapse;">
+                            <thead>
+                                <tr style="background:var(--bg-app);font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;">
+                                    <th style="padding:0.6rem 0.5rem;text-align:left;">Model</th>
+                                    <th style="padding:0.6rem 0.5rem;text-align:left;">Loại SP</th>
+                                    <th style="padding:0.6rem 0.5rem;text-align:center;width:150px;">Ảnh Sản Phẩm</th>
+                                    <th style="padding:0.6rem 0.5rem;text-align:center;width:150px;">Ảnh Hướng Dẫn</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                    <!-- Footer -->
+                    <div style="padding:0.85rem 1.25rem;border-top:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;">
+                        <span id="batch-save-msg" style="font-size:0.83rem;color:#059669;font-weight:600;"></span>
+                        <button onclick="closeBatchModal()"
+                            style="padding:0.5rem 1.25rem;background:var(--primary);color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;">
+                            ✅ Xong – Đóng
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+            document.body.appendChild(modal);
+            // Hidden single-file inputs
+            if (!document.getElementById('_bpick_sp')) {
+                const sp = document.createElement('input');
+                sp.type='file'; sp.id='_bpick_sp'; sp.accept='image/*'; sp.style='display:none';
+                sp.onchange = (e) => batchPickDone(e, 'sp');
+                document.body.appendChild(sp);
+                const hd = document.createElement('input');
+                hd.type='file'; hd.id='_bpick_hd'; hd.accept='image/*'; hd.style='display:none';
+                hd.onchange = (e) => batchPickDone(e, 'hd');
+                document.body.appendChild(hd);
+            }
+        }
+
+        let _batchPickIdx = -1;
+        function pickBatchImg(idx, type) {
+            _batchPickIdx = idx;
+            const inp = document.getElementById(type === 'sp' ? '_bpick_sp' : '_bpick_hd');
+            inp.value = '';
+            inp.click();
+        }
+
+        function batchPickDone(event, type) {
+            const file = event.target.files[0];
+            if (!file || _batchPickIdx < 0) return;
+            const idx = _batchPickIdx;
+            const maxW = 1600, maxH = 1600, qual = 0.90;
+            compressImage(file, maxW, maxH, qual, function(dataUrl) {
+                if (type === 'sp') {
+                    products[idx].image = dataUrl;
+                    document.getElementById('bstat-sp-' + idx).textContent = '✅';
+                } else {
+                    products[idx].guideImage = dataUrl;
+                    document.getElementById('bstat-hd-' + idx).textContent = '✅';
+                }
+                localStorage.setItem('rapido_products', JSON.stringify(products));
+                const msg = document.getElementById('batch-save-msg');
+                if (msg) msg.textContent = '💾 Đã lưu ảnh cho ' + products[idx].model;
+                setTimeout(() => { if (msg) msg.textContent = ''; }, 2500);
+            });
+            _batchPickIdx = -1;
+        }
+
+        // Tự ghép ảnh theo tên file ↔ tên model
+        function handleAutoMatchImages(event) {
+            const files = Array.from(event.target.files);
+            if (!files.length) return;
+            let matched = 0, pending = files.length;
+            const done = () => {
+                pending--;
+                if (pending === 0) {
+                    localStorage.setItem('rapido_products', JSON.stringify(products));
+                    renderProductList();
+                    const msg = document.getElementById('batch-save-msg');
+                    if (msg) msg.textContent = `✅ Đã ghép ${matched}/${files.length} ảnh thành công!`;
+                }
+            };
+            files.forEach(file => {
+                // Tên file (không đuôi): "RI-2000ES.jpg" → "RI-2000ES"
+                const baseName = file.name.replace(/\.[^.]+$/, '').toLowerCase().trim();
+                // Tìm model khớp (so sánh không phân biệt hoa/thường, bỏ ký tự đặc biệt)
+                const normalize = s => s.toLowerCase().replace(/[\s\-_\.]/g, '');
+                const idx = products.findIndex(p =>
+                    normalize(p.model) === normalize(baseName) ||
+                    normalize(baseName).includes(normalize(p.model)) ||
+                    normalize(p.model).includes(normalize(baseName))
+                );
+                if (idx === -1) { done(); return; }
+                matched++;
+                compressImage(file, 1600, 1600, 0.90, function(dataUrl) {
+                    // Ảnh HD nếu tên file chứa "hd","guide","huongdan"
+                    const isGuide = /(hd|guide|huongdan|hdsd)/.test(baseName);
+                    if (isGuide) {
+                        products[idx].guideImage = dataUrl;
+                        const el = document.getElementById('bstat-hd-' + idx);
+                        if (el) el.textContent = '✅';
+                    } else {
+                        products[idx].image = dataUrl;
+                        const el = document.getElementById('bstat-sp-' + idx);
+                        if (el) el.textContent = '✅';
+                    }
+                    done();
+                });
+            });
+            event.target.value = '';
+        }
+
+        function closeBatchModal() {
+            const modal = document.getElementById('batch-img-modal');
+            if (modal) modal.remove();
+            renderProductList();
+        }
+
         // --- SAO LƯU DỮ LIỆU ---
         function exportData() {
             const dataStr = JSON.stringify(products, null, 2);
@@ -1599,28 +1821,169 @@
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = `rapido_backup_${new Date().toLocaleDateString()}.json`;
+            link.download = `rapido_backup_${new Date().toLocaleDateString('vi-VN')}.json`;
             link.click();
         }
 
+        // Tải file Excel mẫu .xlsx từ cùng thư mục
+        function downloadTemplate() {
+            const link = document.createElement('a');
+            link.href = 'template_sanpham_rapido.xlsx';
+            link.download = 'template_sanpham_rapido.xlsx';
+            link.click();
+        }
+
+        // Import từ Excel (.xlsx) hoặc JSON (.json)
         function importData(event) {
             const file = event.target.files[0];
+            event.target.value = '';
             if (!file) return;
+
+            const isExcel = file.name.toLowerCase().endsWith('.xlsx') ||
+                            file.name.toLowerCase().endsWith('.xls');
+
+            if (isExcel) {
+                importFromExcel(file);
+            } else {
+                importFromJSON(file);
+            }
+        }
+
+        function importFromExcel(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+
+                    // Tìm sheet SẢN PHẨM (chứa "SAN PHAM" hoặc index 1)
+                    const findSheet = (keywords) => {
+                        for (const name of workbook.SheetNames) {
+                            const n = name.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                            if (keywords.some(k => n.includes(k))) return workbook.Sheets[name];
+                        }
+                        return null;
+                    };
+
+                    const sheetSP    = findSheet(['SANPHAM','PRODUCT','SP']) || workbook.Sheets[workbook.SheetNames[1]];
+                    const sheetLoi   = findSheet(['MALOI','LOI','ERROR'])    || workbook.Sheets[workbook.SheetNames[2]];
+                    const sheetLK    = findSheet(['LINHKIEN','PART','LK'])   || workbook.Sheets[workbook.SheetNames[3]];
+
+                    if (!sheetSP) {
+                        alert('Không tìm thấy sheet SẢN PHẨM trong file Excel!\nVui lòng dùng đúng file mẫu template_sanpham_rapido.xlsx');
+                        return;
+                    }
+
+                    // Đọc dữ liệu từ sheet (bỏ qua dòng tiêu đề – dòng 1 và 2)
+                    const toRows = (sheet) => {
+                        if (!sheet) return [];
+                        const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+                        // Bỏ 2 dòng đầu (tiêu đề lớn + header cột)
+                        return json.slice(2).filter(r => r.some(c => String(c).trim() !== ''));
+                    };
+
+                    const rowsSP  = toRows(sheetSP);
+                    const rowsLoi = toRows(sheetLoi);
+                    const rowsLK  = toRows(sheetLK);
+
+                    // Map mã lỗi theo model: { "RI-2000ES": [{code,cause,solution}, ...] }
+                    const errorMap = {};
+                    for (const r of rowsLoi) {
+                        const model    = String(r[0] || '').trim();
+                        const code     = String(r[1] || '').trim();
+                        const cause    = String(r[2] || '').trim();
+                        const solution = String(r[3] || '').trim();
+                        if (!model || !code) continue;
+                        if (!errorMap[model]) errorMap[model] = [];
+                        errorMap[model].push({ code, cause, solution });
+                    }
+
+                    // Map linh kiện theo model: { "RI-2000ES": [{code,name,desc,img}, ...] }
+                    const partMap = {};
+                    for (const r of rowsLK) {
+                        const model = String(r[0] || '').trim();
+                        const code  = String(r[1] || '').trim();
+                        const name  = String(r[2] || '').trim();
+                        const desc  = String(r[3] || '').trim();
+                        const img   = String(r[4] || '').trim();
+                        if (!model || (!code && !name)) continue;
+                        if (!partMap[model]) partMap[model] = [];
+                        partMap[model].push({ code, name, desc, img });
+                    }
+
+                    // Tạo danh sách sản phẩm từ sheet SP
+                    // Cột: A=STT, B=Loại SP, C=Tên Model, D=Đặc điểm, E=Hướng dẫn, F=Link ảnh SP, G=Link ảnh HD
+                    const imported = [];
+                    for (const r of rowsSP) {
+                        const model = String(r[2] || '').trim();
+                        if (!model || model.startsWith('Tên model') || model.startsWith('⭐')) continue;
+                        const type       = String(r[1] || '').trim();
+                        const features   = String(r[3] || '').trim();
+                        const guide      = String(r[4] || '').trim();
+                        const image      = String(r[5] || '').trim();
+                        const guideImage = String(r[6] || '').trim();
+                        imported.push({
+                            id: Date.now() + Math.random(),
+                            type, model, features, guide,
+                            image:      image      || '',
+                            guideImage: guideImage || '',
+                            errors: errorMap[model] || [],
+                            parts:  partMap[model]  || [],
+                        });
+                    }
+
+                    if (imported.length === 0) {
+                        alert('Không tìm thấy sản phẩm hợp lệ trong file Excel!\nHãy điền Tên Model vào cột C của sheet SẢN PHẨM.');
+                        return;
+                    }
+
+                    applyImport(imported, `Excel (${imported.length} sản phẩm, ${rowsLoi.length} mã lỗi, ${rowsLK.length} linh kiện)`);
+
+                } catch (err) {
+                    console.error(err);
+                    alert('Lỗi đọc file Excel!\n' + err.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function importFromJSON(file) {
             const reader = new FileReader();
             reader.onload = function(e) {
                 try {
                     const imported = JSON.parse(e.target.result);
-                    if (Array.isArray(imported)) {
-                        products = imported;
-                        localStorage.setItem('rapido_products', JSON.stringify(products));
-                        renderProductList();
-                        alert('Nhập dữ liệu thành công!');
+                    if (!Array.isArray(imported) || imported.length === 0) {
+                        alert('File JSON không hợp lệ hoặc rỗng!');
+                        return;
                     }
+                    const validItems = imported.filter(p => p.model && !p.model.startsWith('Tên model'));
+                    if (validItems.length === 0) {
+                        alert('Không tìm thấy sản phẩm hợp lệ trong file JSON!');
+                        return;
+                    }
+                    applyImport(validItems, `JSON (${validItems.length} sản phẩm)`);
                 } catch (err) {
-                    alert('File không hợp lệ!');
+                    alert('File JSON không đọc được!\n' + err.message);
                 }
             };
-            reader.readAsText(file);
+            reader.readAsText(file, 'UTF-8');
+        }
+
+        function applyImport(newItems, label) {
+            const choice = products.length > 0
+                ? confirm(`Tìm thấy ${newItems.length} sản phẩm từ ${label}.\n\n✅ Nhấn OK  → THÊM VÀO danh sách hiện có (${products.length} sản phẩm).\n❌ Nhấn Hủy → GHI ĐÈ toàn bộ (xóa ${products.length} sản phẩm cũ).`)
+                : false;
+
+            if (choice) {
+                const withNewId = newItems.map(p => ({ ...p, id: Date.now() + Math.random() }));
+                products = [...products, ...withNewId];
+                alert(`✅ Đã THÊM ${withNewId.length} sản phẩm mới vào danh sách!`);
+            } else {
+                products = newItems.map(p => ({ ...p, id: p.id || Date.now() + Math.random() }));
+                alert(`✅ Đã GHI ĐÈ với ${products.length} sản phẩm!`);
+            }
+            localStorage.setItem('rapido_products', JSON.stringify(products));
+            renderProductList();
         }
 
         // --- CÀI ĐẶT HỆ THỐNG ---
@@ -1883,7 +2246,7 @@
             renderUnansweredList();
         }
 
-        function saveSettings() {
+        function saveSettingsWithAlert() {
             settings.warranty = document.getElementById('setting-warranty').value;
             localStorage.setItem('rapido_settings', JSON.stringify(settings));
             alert('Đã lưu cài đặt!');
@@ -1894,12 +2257,18 @@
             lucide.createIcons();
             renderProductList();
             renderUnansweredList();
-            
+
             // Áp dụng settings đã lưu
             setTheme(settings.theme);
             setFont(settings.font);
             setSize(settings.size);
             document.getElementById('setting-warranty').value = settings.warranty || '';
+
+            // Khôi phục trạng thái đăng nhập admin sau F5
+            // Dữ liệu sản phẩm LUÔN được giữ trong localStorage, không bao giờ bị xóa khi F5
+            if (sessionStorage.getItem('rapido_admin_auth') === '1') {
+                unlockAdminUI();
+            }
         };
     </script>
 </body>

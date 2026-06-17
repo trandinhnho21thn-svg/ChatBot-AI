@@ -1,0 +1,72 @@
+[
+  {
+    "type": "Máy rửa chén",
+    "model": "RI-2000ES",
+    "features": "Tự động rửa chén, 8 chương trình, sấy khô bằng nhiệt, tiết kiệm điện A++",
+    "guide": "1. Sắp xếp chén vào giỏ đúng chiều\n2. Thêm nước rửa chén + muối làm mềm nước\n3. Chọn chương trình phù hợp\n4. Nhấn START để bắt đầu",
+    "errors": [
+      {
+        "code": "E1",
+        "cause": "Lỗi cảm biến nhiệt độ nước",
+        "solution": "Kiểm tra và thay thế cảm biến nhiệt độ NTC. Vệ sinh bộ lọc nước đầu vào."
+      },
+      {
+        "code": "E3",
+        "cause": "Lỗi bơm thoát nước – nước không thoát được",
+        "solution": "Kiểm tra bộ lọc đáy máy, thông tắc ống thoát. Nếu bơm hỏng thì thay mới."
+      },
+      {
+        "code": "E5",
+        "cause": "Lỗi cửa chưa đóng kín",
+        "solution": "Kiểm tra ron cao su cửa, đảm bảo chốt cửa khóa đúng vị trí."
+      }
+    ],
+    "parts": [
+      {
+        "code": "LK-001",
+        "name": "Cảm biến nhiệt NTC",
+        "desc": "Dùng cho lỗi E1 – cảm biến đo nhiệt độ nước rửa"
+      },
+      {
+        "code": "LK-002",
+        "name": "Bơm thoát nước",
+        "desc": "Dùng cho lỗi E3 – bơm đẩy nước thải ra ngoài"
+      },
+      {
+        "code": "LK-003",
+        "name": "Ron cao su cửa",
+        "desc": "Dùng cho lỗi E5 – gioăng cao su làm kín cửa máy"
+      }
+    ]
+  },
+  {
+    "type": "Máy sấy quần áo",
+    "model": "RD-500T",
+    "features": "Sấy bơm nhiệt Heat Pump, 7kg, 15 chương trình, tiết kiệm điện, giảm nhăn vải",
+    "guide": "1. Kiểm tra túi lọc xơ vải trước mỗi lần dùng\n2. Cho quần áo vào, đóng cửa máy\n3. Chọn chương trình phù hợp theo loại vải\n4. Nhấn START",
+    "errors": [
+      {
+        "code": "F1",
+        "cause": "Túi lọc xơ vải bị tắc nghẽn",
+        "solution": "Làm sạch túi lọc xơ vải ở mặt trước máy. Vệ sinh bộ lọc phụ ở dưới cùng."
+      },
+      {
+        "code": "F4",
+        "cause": "Lỗi cảm biến độ ẩm",
+        "solution": "Lau sạch 2 thanh cảm biến độ ẩm trong lồng máy bằng vải khô. Nếu vẫn lỗi thì thay cảm biến."
+      }
+    ],
+    "parts": [
+      {
+        "code": "LK-101",
+        "name": "Túi lọc xơ vải",
+        "desc": "Lọc xơ vải trong quá trình sấy, cần vệ sinh sau mỗi lần sử dụng"
+      },
+      {
+        "code": "LK-102",
+        "name": "Thanh cảm biến độ ẩm",
+        "desc": "Dùng cho lỗi F4 – cảm nhận độ ẩm để điều chỉnh thời gian sấy"
+      }
+    ]
+  }
+]
