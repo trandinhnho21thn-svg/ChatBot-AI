@@ -1507,7 +1507,29 @@ function buildReply(q,ctx){
   var qa=ctx.qa||[],bom=ctx.bom||[],hl=CFG.hotline;
 
   // Xử lý intent đặc biệt — các intent có nguồn dữ liệu riêng phải xử lý TRƯỚC QA pool
-  if(it==="warranty"&&qa.length===0)return replyWH(q);
+  // warranty: chỉ dùng QA nếu bản ghi đó THỰC SỰ về bảo hành (loai='Bảo hành' hoặc cau_hoi rõ ràng về bảo hành)
+  // Tránh bản ghi loai=BNN có 'đăng ký bảo hành' trong cau_hoi nhưng tra_loi lại về sản phẩm BNN
+  if(it==="warranty"){
+    var warrantyQA=[];
+    for(var wqi=0;wqi<qa.length;wqi++){
+      var wq=qa[wqi];
+      var wLoai=norm(wq.loai||wq.nhom||"");
+      var wCH=norm(wq.cau_hoi||wq.q||"");
+      var isRealWarrantyQA=(
+        wLoai.indexOf("bao hanh")>=0||wLoai==="bh"||
+        (wCH.indexOf("bao hanh")>=0&&(wCH.indexOf("huong dan")>=0||wCH.indexOf("cach")>=0))
+      );
+      if(isRealWarrantyQA)warrantyQA.push(wq);
+    }
+    if(warrantyQA.length>0){
+      var best=warrantyQA[0];
+      var html="<div class='qa-box'><div class='qa-src'>🛡 "+esc(best.loai||best.nhom||"Bảo hành – Rapido")+"</div>"+nl(best.tra_loi||best.a||"")+"</div>";
+      var mSet=getMediaSetByKey(q);
+      if(mSet){html+="<div class='media-hint'>📸 "+esc(mSet.ten)+"</div><div class='media-gallery'>";for(var mi=0;mi<mSet.imgs.length;mi++)html+="<img src='"+mSet.imgs[mi]+"' class='gallery-img' onclick='showImg(this)' alt='Ảnh "+(mi+1)+"'>";html+="</div>";}
+      return html;
+    }
+    return replyWH(q);
+  }
   if(it==="contact")return"<b>📞 Liên hệ Rapido:</b><br><br>• Hotline: <span class='lbl lt'>📞 "+hl+"</span> (T2–T7, 8:00–17:30)<br>• Website: <span class='lbl lt'>rapido.vn</span><br>• BH online: <span class='lbl lt'>rapido.vn/bao-hanh-online</span><br>• Email: <span class='lbl lt'>cskh@rapido.vn</span>";
   if(it==="price")return"Giá sản phẩm Rapido xem tại:<br>• Website: <b>rapido.vn</b><br>• Hotline: <span class='lbl lt'>📞 "+hl+"</span>";
   if(ctx.notFound)return"Em không tìm thấy model <b>\""+esc(ctx.hint)+"\"</b>.<br>• Kiểm tra lại tên model<br>• Gọi <span class='lbl lt'>📞 "+hl+"</span> để được hỗ trợ!";
@@ -1587,9 +1609,6 @@ function buildReply(q,ctx){
     }
     return html;
   }
-
-  // ── Fallback warranty: QA không có → dùng replyWH ─────────────
-  if(it==="warranty")return replyWH(q);
 
   // ── BƯỚC 3: Ảnh hướng dẫn (khi không có QA) ──────────────────
   var mSetDirect=getMediaSetByKey(q);
