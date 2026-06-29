@@ -1228,22 +1228,24 @@ function noInfo(){return "Hiện tại em chưa có thông tin về câu hỏi n
 
 
 // ── SEARCH Q&A THÔNG MINH ───────────────────────────────────────
-// Không lọc cứng theo nhóm, chấm điểm toàn bộ QA rồi lấy cao nhất
+// Tìm trong QA sheet + tổng hợp nội dung từ SP (dac_diem, hdsd) và LOI (nn, kp)
 function searchQA(q, groups) {
   if(!DB)return[];
   var tk=toks(q);if(tk.length<1)return[];
   var nq=norm(q);
 
   // Lọc ra các từ khóa QUAN TRỌNG (không phải từ chung chung)
+  // Đã bỏ "dang" ra khỏi STOP_WORDS để "đăng ký" được nhận diện đúng
   var STOP_WORDS=["binh","may","nuoc","nong","lanh","bep","quat","noi","chien",
     "dien","tu","cai","nay","nhu","the","nao","co","bi","la","gi","sao","va",
-    "de","cho","khi","sau","thi","duoc","khong","phai","can","moi","da","dang"];
+    "de","cho","khi","sau","thi","duoc","khong","phai","can","moi","da"];
   var tkImportant=tk.filter(function(t){
     return t.length>=3 && STOP_WORDS.indexOf(t)<0;
   });
   // Nếu không có từ quan trọng thì dùng tất cả từ
   if(tkImportant.length===0)tkImportant=tk;
 
+  // ── Pool 1: QA sheet (câu hỏi + trả lời) ────────────────────
   var allQA=(DB.qa||[]).concat(QA_CUSTOM),results=[];
 
   for(var i=0;i<allQA.length;i++){
@@ -1252,21 +1254,15 @@ function searchQA(q, groups) {
     var tra_loi=norm(qa.tra_loi||qa.a||"");
     var loai=qa.loai||qa.nhom||"";
 
-    // Đếm bao nhiêu từ QUAN TRỌNG của user khớp với câu hỏi QA
     var importantMatch=0;
     for(var ti=0;ti<tkImportant.length;ti++){
       if(cau_hoi.indexOf(tkImportant[ti])>=0)importantMatch++;
     }
-    // Nếu không có từ quan trọng nào khớp → bỏ qua
     if(importantMatch===0)continue;
 
-    // Điểm chính: tỉ lệ từ quan trọng khớp (0-10 điểm)
     var sc = Math.round((importantMatch / tkImportant.length) * 10);
-
-    // Thưởng thêm nếu cụm từ khớp liên tiếp
     sc += scoreText(cau_hoi, tkImportant) * 2;
 
-    // Thưởng nhóm khớp
     if(groups&&groups.length>0){
       var loaiN=norm(loai);
       for(var gi=0;gi<groups.length;gi++){
@@ -1274,13 +1270,73 @@ function searchQA(q, groups) {
       }
     }
 
-    // Phạt nếu câu hỏi QA quá dài so với câu user (tránh trả về bài viết dài không liên quan)
     var qaCHlen=(qa.cau_hoi||qa.q||"").length;
-    var userQlen=q.length;
-    if(qaCHlen > userQlen * 4) sc -= 3;
+    if(qaCHlen > q.length * 4) sc -= 3;
 
     if(sc>=3)results.push({qa:qa,sc:sc});
   }
+
+  // ── Pool 2: SP sheet — dac_diem và hdsd làm nguồn QA tổng hợp ─
+  // Chỉ lấy SP đúng với model người dùng hỏi (em list), hoặc khớp nhóm nếu không có model
+  if(DB.sp&&DB.sp.length){
+    // Lấy danh sách model phạm vi từ findModel (em được truyền qua groups heuristic)
+    // Để an toàn: chỉ tìm SP nếu tkImportant có ít nhất 1 từ khớp với model/loai
+    for(var si=0;si<DB.sp.length;si++){
+      var sp=DB.sp[si];
+      var mC=norm(sp.model||"");
+      // BẮT BUỘC: model phải xuất hiện trong câu hỏi (chuẩn hóa)
+      if(!mC||nq.indexOf(mC)<0)continue;
+
+      // Tìm trong dac_diem
+      if(sp.dac_diem&&sp.dac_diem.trim()){
+        var ddNorm=norm(sp.dac_diem);
+        var ddMatch=0;
+        for(var ti=0;ti<tkImportant.length;ti++){
+          if(ddNorm.indexOf(tkImportant[ti])>=0)ddMatch++;
+        }
+        // Thưởng điểm cao vì model khớp chính xác
+        var sc2=(ddMatch>0?Math.round((ddMatch/tkImportant.length)*6):0)+8;
+        if(groups&&groups.length>0){var ln=norm(sp.loai||"");for(var gi=0;gi<groups.length;gi++)if(ln.indexOf(norm(groups[gi]))>=0){sc2+=3;break;}}
+        results.push({qa:{cau_hoi:sp.model+" dac diem thong so",tra_loi:"✨ "+sp.model+"\n"+sp.dac_diem,loai:sp.loai,_src:"sp_dd"},sc:sc2});
+      }
+
+      // Tìm trong hdsd
+      if(sp.hdsd&&sp.hdsd.trim()){
+        var sc3=10; // model khớp chính xác → điểm cơ bản cao
+        if(groups&&groups.length>0){var ln=norm(sp.loai||"");for(var gi=0;gi<groups.length;gi++)if(ln.indexOf(norm(groups[gi]))>=0){sc3+=3;break;}}
+        results.push({qa:{cau_hoi:sp.model+" huong dan su dung",tra_loi:"📖 Hướng dẫn sử dụng "+sp.model+"\n"+sp.hdsd,loai:sp.loai,_src:"sp_hd"},sc:sc3});
+      }
+    }
+  }
+
+  // ── Pool 3: LOI sheet — nn (nguyên nhân) và kp (khắc phục) ────
+  // Chỉ lấy khi model trong LOI xuất hiện trong câu hỏi
+  if(DB.loi&&DB.loi.length){
+    for(var li=0;li<DB.loi.length;li++){
+      var loi=DB.loi[li];
+      var loiMC=norm(loi.model||"");
+      // Model phải xuất hiện trong câu hỏi
+      if(!loiMC||nq.indexOf(loiMC)<0)continue;
+      var loiText=norm((loi.ma||"")+" "+(loi.nn||"")+" "+(loi.kp||""));
+      var loiMatch=0;
+      for(var ti=0;ti<tkImportant.length;ti++){
+        if(loiText.indexOf(tkImportant[ti])>=0)loiMatch++;
+      }
+      if(loiMatch===0)continue;
+      var sc4=Math.round((loiMatch/tkImportant.length)*8)+scoreText(loiText,tkImportant);
+      // Thưởng nếu mã lỗi khớp trực tiếp
+      if(loi.ma&&norm(loi.ma)&&nq.indexOf(norm(loi.ma))>=0)sc4+=5;
+      if(groups&&groups.length>0){
+        var spOfLoi=null;for(var sj=0;sj<DB.sp.length;sj++)if(DB.sp[sj].model===loi.model){spOfLoi=DB.sp[sj];break;}
+        if(spOfLoi){var ln=norm(spOfLoi.loai||"");for(var gi=0;gi<groups.length;gi++)if(ln.indexOf(norm(groups[gi]))>=0){sc4+=2;break;}}
+      }
+      if(sc4>=3){
+        var loiAnswer=(loi.nn?"⚠️ Nguyên nhân: "+loi.nn+"\n":"")+(loi.kp?"🔧 Khắc phục:\n"+loi.kp:"");
+        results.push({qa:{cau_hoi:loi.model+" loi "+loi.ma+" nguyen nhan",tra_loi:"["+loi.model+"] Mã lỗi "+loi.ma+"\n"+loiAnswer,loai:"Mã lỗi – "+loi.model,_src:"loi"},sc:sc4});
+      }
+    }
+  }
+
   results.sort(function(a,b){return b.sc-a.sc;});
   return results.slice(0,3).map(function(x){return x.qa;});
 }
@@ -1319,17 +1375,29 @@ function detectIntent(q){
   var n=norm(q);
   function has(w){for(var i=0;i<w.length;i++)if(n.indexOf(w[i])>=0)return true;return false;}
 
-  // Kiểm tra dạng câu hỏi how-to/giải thích
+  // ── Bảo hành phải check TRƯỚC HOW_TO_WORDS ──────────────────
+  // Vì "hướng dẫn đăng ký bảo hành" chứa "huong dan" → nếu check HOW_TO_WORDS trước
+  // thì sẽ bị trả về "general" và bỏ qua toàn bộ logic bảo hành.
+  if(has(["bao hanh","kich hoat bao hanh","dang ky bao hanh","thoi han bao hanh",
+          "dieu kien bao hanh","chinh sach bao hanh","het bao hanh","con bao hanh",
+          "trong bao hanh","ngoai bao hanh","kich hoat"]))return"warranty";
+
+  // HDSD — check trước HOW_TO_WORDS để "hướng dẫn sử dụng X" → intent=usage, không phải general
+  if(has(["hdsd","cach su dung","cach dung","cach van hanh","dung nhu nao","dung the nao",
+          "su dung sao","cach lap dat","cach bat","cach tat","cach dieu chinh",
+          "huong dan su dung","huong dan sd","huong dan cach su dung","huong dan dung",
+          "cach su dung","hướng dẫn sử dụng"]))return"usage";
+
+  // Đặc điểm — check trước HOW_TO_WORDS
+  if(has(["dac diem","tinh nang","thong so","mo ta san pham","cong suat","dung tich",
+          "kich thuoc","thong tin san pham","gioi thieu"]))return"spec";
+
+  // Kiểm tra dạng câu hỏi how-to/giải thích (sau khi đã loại bảo hành, usage, spec)
   var isHowTo=false;
   for(var hi=0;hi<HOW_TO_WORDS.length;hi++)if(n.indexOf(HOW_TO_WORDS[hi])>=0){isHowTo=true;break;}
 
   // Nếu hỏi how-to → luôn general để QA xử lý trước
   if(isHowTo)return"general";
-
-  // Bảo hành
-  if(has(["bao hanh","kich hoat bao hanh","dang ky bao hanh","thoi han bao hanh",
-          "dieu kien bao hanh","chinh sach bao hanh","het bao hanh","con bao hanh",
-          "trong bao hanh","ngoai bao hanh","kich hoat"]))return"warranty";
 
   // Linh kiện - chỉ khi hỏi rõ về mã/tên linh kiện hoặc đặt mua
   var isPQ=false;for(var i=0;i<PART_Q.length;i++)if(n.indexOf(PART_Q[i])>=0){isPQ=true;break;}
@@ -1403,7 +1471,7 @@ function searchDB(q){
 
 
 function replyWH(q){
-  var n=norm(q),hl=CFG.hotline,wf=(DB&&DB.warranty_full)||{},r="";
+  var n=norm(q),hl=CFG.hotline,wf=(DB&&(DB.bao_hanh||DB.warranty_full))||{},r="";
   function has(w){return n.indexOf(w)>=0;}
   if(has("dang ky")||has("kich hoat")||has("online")){
     var dk=wf.dang_ky||{};
@@ -1438,16 +1506,56 @@ function buildReply(q,ctx){
   var it=detectIntent(q),sp=ctx.sp,loi=ctx.loi,lk=ctx.lk,em=ctx.em,gr=ctx.gr;
   var qa=ctx.qa||[],bom=ctx.bom||[],hl=CFG.hotline;
 
-  // Xử lý intent đặc biệt
-  if(it==="warranty")return replyWH(q);
+  // Xử lý intent đặc biệt — các intent có nguồn dữ liệu riêng phải xử lý TRƯỚC QA pool
+  if(it==="warranty"&&qa.length===0)return replyWH(q);
   if(it==="contact")return"<b>📞 Liên hệ Rapido:</b><br><br>• Hotline: <span class='lbl lt'>📞 "+hl+"</span> (T2–T7, 8:00–17:30)<br>• Website: <span class='lbl lt'>rapido.vn</span><br>• BH online: <span class='lbl lt'>rapido.vn/bao-hanh-online</span><br>• Email: <span class='lbl lt'>cskh@rapido.vn</span>";
   if(it==="price")return"Giá sản phẩm Rapido xem tại:<br>• Website: <b>rapido.vn</b><br>• Hotline: <span class='lbl lt'>📞 "+hl+"</span>";
   if(ctx.notFound)return"Em không tìm thấy model <b>\""+esc(ctx.hint)+"\"</b>.<br>• Kiểm tra lại tên model<br>• Gọi <span class='lbl lt'>📞 "+hl+"</span> để được hỗ trợ!";
 
+  // ── HDSD: xử lý ngay, KHÔNG để QA pool override ──────────────
+  // "hướng dẫn sử dụng" có intent=usage, phải lấy từ SP.hdsd, không từ QA ngẫu nhiên
+  if(it==="usage"){
+    var tgt=em.length===1?getSP(em[0]):(sp.length>0?getSP(sp[0].model):null);
+    if(tgt&&tgt.hdsd&&tgt.hdsd.trim())return"<b>📖 Hướng dẫn sử dụng – "+esc(tgt.model)+"</b><br><br><pre style='white-space:pre-wrap;font-family:var(--fn);font-size:calc(var(--fs) - 1px);background:var(--bg);padding:10px;border-radius:var(--r2);border:1px solid var(--bd)'>"+esc(tgt.hdsd)+"</pre>";
+    // Không có HDSD trong SP → thử tìm trong QA (fallback)
+    if(qa.length>0&&(qa[0]._src==="sp_hd"||qa[0]._src==="qa"||!qa[0]._src)){
+      var best0=qa[0];var html0="<div class='qa-box'><div class='qa-src'>📖 "+esc(best0.loai||best0.nhom||"Rapido")+"</div>"+nl(best0.tra_loi||best0.a||"")+"</div>";return html0;
+    }
+    return noInfo();
+  }
+
+  // ── Đặc điểm SP: xử lý ngay, KHÔNG để QA pool override ───────
+  if(it==="spec"){
+    var tgt=em.length===1?getSP(em[0]):(sp.length>0?getSP(sp[0].model):null);
+    if(tgt&&tgt.dac_diem&&tgt.dac_diem.trim()){
+      var r="<b>✨ Đặc điểm – "+esc(tgt.model)+"</b><br><br>"+nl(tgt.dac_diem);
+      var ec=DB.loi.filter(function(e){return e.model===tgt.model;}).length;
+      var lc=DB.lk.filter(function(l){return l.model===tgt.model;}).length;
+      if(ec||lc){r+="<br><div class='dvd'></div>";if(ec)r+="<span class='lbl le'>⚠️ "+ec+" mã lỗi</span> ";if(lc)r+="<span class='lbl lp'>🔩 "+lc+" linh kiện</span>";}
+      return r;
+    }
+    if(qa.length>0&&(qa[0]._src==="sp_dd"||!qa[0]._src)){
+      var best0=qa[0];return"<div class='qa-box'><div class='qa-src'>✨ "+esc(best0.loai||"Rapido")+"</div>"+nl(best0.tra_loi||best0.a||"")+"</div>";
+    }
+    return noInfo();
+  }
+
   // ── BƯỚC 1: Luôn tìm QA trước (ưu tiên cao nhất) ──────────────
   if(qa.length>0){
     var best=qa[0];
-    var html="<div class='qa-box'><div class='qa-src'>💬 "+esc(best.loai||best.nhom||"Rapido")+"</div>"+nl(best.tra_loi||best.a||"")+"</div>";
+    var rawAnswer=best.tra_loi||best.a||"";
+    var html;
+    // Render khác nhau tuỳ nguồn
+    if(best._src==="sp_hd"){
+      // Nội dung HDSD từ sheet SP → dùng <pre> để giữ xuống dòng
+      html="<div class='qa-box'><div class='qa-src'>📖 Hướng dẫn sử dụng – "+(best.loai||"Rapido")+"</div><pre style='white-space:pre-wrap;font-family:var(--fn);font-size:calc(var(--fs) - 1px);background:var(--bg);padding:10px;border-radius:var(--r2);border:1px solid var(--bd)'>"+esc(rawAnswer)+"</pre></div>";
+    } else if(best._src==="sp_dd"){
+      html="<div class='qa-box'><div class='qa-src'>✨ Thông tin sản phẩm – "+(best.loai||"Rapido")+"</div>"+nl(rawAnswer)+"</div>";
+    } else if(best._src==="loi"){
+      html="<div class='qa-box'><div class='qa-src'>⚠️ "+(best.loai||"Mã lỗi – Rapido")+"</div>"+nl(rawAnswer)+"</div>";
+    } else {
+      html="<div class='qa-box'><div class='qa-src'>💬 "+esc(best.loai||best.nhom||"Rapido")+"</div>"+nl(rawAnswer)+"</div>";
+    }
 
     // Thêm ảnh hướng dẫn nếu có
     var mSet=getMediaSetByKey(q);
@@ -1458,17 +1566,19 @@ function buildReply(q,ctx){
       html+="</div>";
     }
 
-    // ── BƯỚC 2: Gợi ý linh kiện liên quan sau khi trả lời QA ──
+    // ── BƯỚC 2: Gợi ý linh kiện — chỉ khi KHÔNG phải câu hỏi bảo hành và nguồn không phải LOI ──
+    var bestLoai=norm(best.loai||best.nhom||"");
+    var isWarrantyQA=(bestLoai.indexOf("bao hanh")>=0||bestLoai.indexOf("bnn")>=0);
+    var skipParts=(it==="warranty"||isWarrantyQA||best._src==="loi"||best._src==="sp_hd");
     var lkGoi=lk.length>0?lk:bom;
-    if(lkGoi.length>0&&em.length===0){
-      // Chỉ gợi ý nếu linh kiện thực sự liên quan (score cao)
+    if(!skipParts&&lkGoi.length>0&&em.length===0){
       html+="<div class='dvd'></div><b>🔩 Linh kiện có thể cần thay:</b><br>";
       for(var li=0;li<Math.min(lkGoi.length,3);li++){
         var l=lkGoi[li];
         html+="<div class='lk-box'><span class='lk-ma'>📋 "+esc(l.ma)+"</span><div class='lk-ten'>"+esc(l.ten)+"</div>"+(l.mo_ta?"<div class='lk-mt'>"+esc(l.mo_ta)+"</div>":"")+"</div>";
       }
       html+="<br><span class='lbl lw'>Cần mua linh kiện? Gọi <b>📞 "+hl+"</b></span>";
-    } else if(lkGoi.length>0&&em.length>0){
+    } else if(!skipParts&&lkGoi.length>0&&em.length>0){
       html+="<div class='dvd'></div><b>🔩 Linh kiện của "+esc(em[0])+":</b><br>";
       for(var li=0;li<Math.min(lkGoi.length,3);li++){
         var l=lkGoi[li];
@@ -1477,6 +1587,9 @@ function buildReply(q,ctx){
     }
     return html;
   }
+
+  // ── Fallback warranty: QA không có → dùng replyWH ─────────────
+  if(it==="warranty")return replyWH(q);
 
   // ── BƯỚC 3: Ảnh hướng dẫn (khi không có QA) ──────────────────
   var mSetDirect=getMediaSetByKey(q);
@@ -1488,27 +1601,7 @@ function buildReply(q,ctx){
     return mHtml;
   }
 
-  // ── BƯỚC 4: HDSD ──────────────────────────────────────────────
-  if(it==="usage"){
-    var tgt=em.length===1?getSP(em[0]):(sp.length>0?getSP(sp[0].model):null);
-    if(tgt&&tgt.hdsd&&tgt.hdsd.trim())return"<b>📖 Hướng dẫn sử dụng – "+esc(tgt.model)+"</b><br><br><pre>"+esc(tgt.hdsd)+"</pre>";
-    return noInfo();
-  }
-
-  // ── BƯỚC 5: Đặc điểm SP ──────────────────────────────────────
-  if(it==="spec"){
-    var tgt=em.length===1?getSP(em[0]):(sp.length>0?getSP(sp[0].model):null);
-    if(tgt&&tgt.dac_diem&&tgt.dac_diem.trim()){
-      var r="<b>✨ Đặc điểm – "+esc(tgt.model)+"</b><br><br>"+esc(tgt.dac_diem);
-      var ec=DB.loi.filter(function(e){return e.model===tgt.model;}).length;
-      var lc=DB.lk.filter(function(l){return l.model===tgt.model;}).length;
-      if(ec||lc){r+="<br><div class='dvd'></div>";if(ec)r+="<span class='lbl le'>⚠️ "+ec+" mã lỗi</span> ";if(lc)r+="<span class='lbl lp'>🔩 "+lc+" linh kiện</span>";}
-      return r;
-    }
-    return noInfo();
-  }
-
-  // ── BƯỚC 6: Linh kiện (hỏi trực tiếp về mã/tên LK) ──────────
+  // ── BƯỚC 4: Linh kiện (hỏi trực tiếp về mã/tên LK) ──────────
   if(it==="parts"){
     if(!lk.length&&!bom.length)return noInfo();
     var lkAll=lk.length?lk:bom;
