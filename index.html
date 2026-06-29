@@ -121,6 +121,25 @@ html,body{height:100%;overflow:hidden;font-family:var(--ff);font-size:var(--fs);
 #sbtn:hover{background:var(--pc2)}
 #sbtn svg{width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #hint{font-size:11px;color:var(--tx3);text-align:center;margin-top:5px}#hint b{color:var(--pc)}
+/* FEEDBACK PANEL */
+#fbPanel{position:fixed;bottom:80px;right:16px;width:300px;background:#fff;border:1px solid var(--bd);border-radius:var(--r2);box-shadow:0 8px 32px rgba(0,0,0,.15);flex-direction:column;gap:10px;padding:16px;z-index:400;display:none}
+#fbPanel label{font-size:13px;font-weight:600;color:var(--tx1)}
+#fbPanel select,#fbPanel textarea{width:100%;border:1px solid var(--bd);border-radius:var(--r2);padding:8px 10px;font-size:13px;font-family:var(--fn);color:var(--tx1);background:var(--bg);box-sizing:border-box;resize:none}
+#fbPanel .fb-actions{display:flex;gap:8px}
+#fbPanel .fb-btn{flex:1;padding:8px;border:none;border-radius:var(--r2);font-size:13px;font-weight:600;cursor:pointer}
+#fbPanel .fb-send{background:#6D28D9;color:#fff}
+#fbPanel .fb-cancel{background:var(--bg2);color:var(--tx2)}
+.sync-btn{display:flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:var(--r3);color:#fff;font-size:12px;font-family:var(--fn);cursor:pointer;transition:background .15s;white-space:nowrap}
+.sync-btn:hover{background:rgba(255,255,255,.28)}
+.sync-btn.syncing{opacity:.75;pointer-events:none}
+.sync-btn svg{width:14px;height:14px;flex-shrink:0;transition:transform .5s}
+.sync-btn.syncing svg{animation:spin-sync .8s linear infinite}
+@keyframes spin-sync{to{transform:rotate(360deg)}}
+/* SYNC TOAST */
+#syncToast{position:fixed;bottom:72px;left:50%;transform:translateX(-50%) translateY(20px);background:#1a1a2e;color:#fff;font-size:13px;font-family:var(--fn);padding:10px 18px;border-radius:var(--r3);box-shadow:0 4px 20px rgba(0,0,0,.3);opacity:0;pointer-events:none;transition:opacity .3s,transform .3s;z-index:500;white-space:nowrap;max-width:90vw;text-align:center}
+#syncToast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#syncToast .st-ok{color:#4ade80}
+#syncToast .st-err{color:#f87171}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#d4d4d4;border-radius:2px}
 /* OVERLAY */
 .ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;display:none;align-items:center;justify-content:center}
@@ -262,6 +281,17 @@ html,body{height:100%;overflow:hidden;font-family:var(--ff);font-size:var(--fs);
   </div>
   <div class="hright">
     <div class="hbadge"><div class="hbdot"></div><span id="spCount">Offline · 120 SP</span></div>
+    <div id="geminiBadge" style="display:none;align-items:center;gap:5px;background:rgba(124,58,237,.2);border:1px solid rgba(124,58,237,.4);border-radius:var(--r3);padding:4px 10px">
+      <span style="font-size:10px">🤖</span><span style="color:#fff;font-size:11px" id="geminiBadgeTxt">AI</span>
+    </div>
+    <button class="sync-btn" id="syncBtn" onclick="manualSync()" title="Đồng bộ dữ liệu mới nhất từ Google Sheets">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      <span id="syncBtnTxt">Đồng bộ</span>
+    </button>
+    <button class="sync-btn" onclick="toggleFeedback()" title="Gửi góp ý / báo lỗi" style="background:rgba(109,40,217,.25);border-color:rgba(109,40,217,.4)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span>Góp ý</span>
+    </button>
     <div class="hbtn-wrap">
       <button class="hbtn" onclick="openAdmin()">⚙ Admin</button>
       <span class="notif-badge" id="notifBadge" style="display:none">!</span>
@@ -592,6 +622,85 @@ html,body{height:100%;overflow:hidden;font-family:var(--ff);font-size:var(--fs);
           <input type="text" id="gsUrl" placeholder="https://docs.google.com/spreadsheets/d/SHEET_ID/edit">
           <div style="font-size:11.5px;color:#6b7280;margin-top:5px">Dán link Google Sheets đã <b>Publish to web</b>. Để trống = dùng dữ liệu có sẵn trong file.</div>
         </div>
+        <div class="afield" style="margin-top:16px;border-top:2px solid #dbeafe;padding-top:14px">
+          <label style="color:#1d6fbd;font-weight:700">🤖 Gemini AI API Key (tăng độ thông minh)</label>
+          <input type="password" id="geminiKeyInput" placeholder="AIza... (lấy miễn phí tại aistudio.google.com)">
+          <div style="font-size:11.5px;color:#6b7280;margin-top:5px">
+            Key lưu trong trình duyệt, không gửi về server. 
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:#1d6fbd">Lấy API Key miễn phí →</a>
+          </div>
+        </div>
+        <div class="afield">
+          <label style="color:#1d6fbd;font-weight:700">Chế độ Gemini AI</label>
+          <select id="geminiModeSelect">
+            <option value="off">Tắt — chỉ dùng dữ liệu Sheets (nhanh, không cần key)</option>
+            <option value="fallback">Bật — Gemini hỗ trợ khi Chatbot không tìm được (khuyến nghị)</option>
+            <option value="always">Luôn dùng Gemini — tự nhiên nhất, tốn quota hơn</option>
+          </select>
+          <div id="geminiStatus" style="font-size:12px;margin-top:6px;padding:6px 10px;border-radius:6px;display:none"></div>
+        </div>
+        <div class="afield" style="margin-top:16px;border-top:2px solid #d1fae5;padding-top:14px">
+          <label style="color:#0F6E56;font-weight:700">🔁 Tự động lưu QA vào Google Sheets</label>
+          <input type="text" id="appsScriptUrl" placeholder="https://script.google.com/macros/s/.../exec">
+          <div style="font-size:11.5px;color:#6b7280;margin-top:5px">
+            Dán URL Google Apps Script (xem hướng dẫn tạo bên dưới). Khi Gemini trả lời tốt → tự ghi vào sheet QA.
+            <span id="autoQaStatus" style="margin-left:6px;font-weight:600"></span>
+          </div>
+          <div style="margin-top:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:10px;font-size:12px;color:#374151;line-height:1.8">
+            <b style="color:#0F6E56">📋 Hướng dẫn tạo Apps Script (làm 1 lần):</b><br>
+            1. Mở Google Sheets → menu <b>Tiện ích mở rộng → Apps Script</b><br>
+            2. Xóa code cũ → dán đoạn code bên dưới → nhấn <b>💾 Lưu</b><br>
+            3. Nhấn <b>Triển khai → Triển khai mới → Web app</b><br>
+            4. Ai có quyền truy cập: chọn <b>"Bất kỳ ai"</b> → nhấn <b>Triển khai</b><br>
+            5. Copy URL dán vào ô trên → nhấn Lưu cấu hình
+          </div>
+          <div style="margin-top:8px;background:#1e293b;border-radius:6px;padding:12px;font-size:11.5px;color:#e2e8f0;font-family:monospace;line-height:1.7;white-space:pre-wrap">// ══ RAPIDO UNIVERSAL AUTO-WRITER ══
+// Ghi vào bất kỳ sheet nào dựa theo sheet_target
+// Tự tạo sheet FEEDBACK nếu chưa có
+
+function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var target = data.sheet_target || "QA";
+    delete data.sheet_target;
+
+    // Tìm hoặc tạo sheet theo tên
+    var sheet = ss.getSheetByName(target);
+    if (!sheet) {
+      sheet = ss.insertSheet(target);
+      // Tạo header tự động cho sheet mới
+      var headers = {
+        "FEEDBACK": ["loai","noi_dung","nguyen_canh","written_at"],
+        "LOI":      ["model","ma","nn","kp","written_at"],
+        "LK":       ["nhom","ten","ma","mo_ta","written_at"],
+        "QA":       ["cau_hoi","tra_loi","loai","written_at"]
+      };
+      var hdr = headers[target] || Object.keys(data).concat(["written_at"]);
+      sheet.appendRow(hdr);
+      sheet.getRange(1,1,1,hdr.length)
+           .setBackground("#C8102E").setFontColor("#ffffff")
+           .setFontWeight("bold");
+    }
+
+    // Đọc header hàng 1 để ghi đúng thứ tự cột
+    var hdrRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var row = hdrRow.map(function(col) {
+      return col === "written_at" ? data.written_at || new Date().toLocaleString("vi-VN")
+                                  : (data[col] !== undefined ? data[col] : "");
+    });
+    sheet.appendRow(row);
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ok:true,sheet:target}))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ok:false,error:err.toString()}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}</div>
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
           <button class="ab" onclick="saveBot()">✓ Lưu cấu hình</button>
           <button class="ab" onclick="testGoogleSheets()" style="background:#059669">🔄 Kết nối & tải ngay</button>
@@ -712,6 +821,13 @@ function initApp() {
   RULES = RULES || (rulesEl ? JSON.parse(rulesEl.textContent) : {});
   applyStoredAP();
   updateNotifBadge();
+  // Hiện badge Gemini nếu đã cấu hình
+  if(CFG.geminiKey&&CFG.geminiMode&&CFG.geminiMode!=="off"){
+    var gb=document.getElementById("geminiBadge");
+    var gt=document.getElementById("geminiBadgeTxt");
+    if(gb){gb.style.display="flex";}
+    if(gt)gt.textContent=CFG.geminiMode==="always"?"AI On":"AI Standby";
+  }
   // ── GOOGLE SHEETS: Nếu có cấu hình thì load thêm/ghi đè ──
   var gsUrl = CFG.googleSheetsUrl || '';
   if (gsUrl) {
@@ -759,12 +875,13 @@ function buildSheetCsvUrl(sheetInfo, sheetName) {
          '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(sheetName);
 }
 
-function loadFromGoogleSheets(baseUrl) {
+function loadFromGoogleSheets(baseUrl, onDone) {
   setLoadMsg('📡 Đang tải dữ liệu từ Google Sheets...');
   var sheetInfo = extractSheetId(baseUrl);
   if (!sheetInfo) {
     setLoadMsg('⚠️ URL không hợp lệ. Vui lòng kiểm tra lại.');
     showApp();
+    if(onDone)onDone(false);
     return;
   }
   var sheets = [
@@ -780,26 +897,39 @@ function loadFromGoogleSheets(baseUrl) {
     { name: 'ANH_HD',   key: 'anh_hd',   parse: parseSheetAnhHD    },
   ];
   var loaded = 0, failed = 0;
+  // Lưu số dòng từng sheet để hiển thị thống kê
+  var counts = {};
   function tryNext(i) {
     if (i >= sheets.length) {
       if (loaded > 0) {
-        setLoadMsg('✅ Đã tải ' + loaded + '/' + sheets.length + ' sheets từ Google Sheets');
+        var summary = '✅ Đồng bộ xong! ';
+        if(DB.sp&&DB.sp.length)   summary += DB.sp.length+'SP · ';
+        if(DB.loi&&DB.loi.length) summary += DB.loi.length+'Lỗi · ';
+        if(DB.lk&&DB.lk.length)   summary += DB.lk.length+'LK · ';
+        if(DB.qa&&DB.qa.length)   summary += DB.qa.length+'QA';
+        setLoadMsg(summary);
         showApp();
+        showSyncToast(summary);
+        buildSB();
+        document.getElementById('spCount').textContent = 'Online · '+DB.sp.length+' SP';
       } else {
         setLoadMsg('⚠️ Không tải được Google Sheets, dùng dữ liệu nhúng sẵn.');
         showApp();
       }
+      if(onDone)onDone(loaded>0);
       return;
     }
     var sh = sheets[i];
     var url = buildSheetCsvUrl(sheetInfo, sh.name);
-    setLoadMsg('📡 Đang tải sheet ' + sh.name + '...');
+    setLoadMsg('📡 Đang tải sheet ' + sh.name + ' (' + (i+1) + '/' + sheets.length + ')...');
     fetchCSV(url, function(csv) {
       if (csv) {
         try {
           var rows = parseCSV(csv);
           if (rows.length > 1) {
-            DB[sh.key] = sh.parse(rows);
+            var parsed = sh.parse(rows);
+            DB[sh.key] = parsed;
+            counts[sh.name] = Array.isArray(parsed) ? parsed.length : Object.keys(parsed).length;
             loaded++;
           }
         } catch(e) { failed++; }
@@ -812,9 +942,12 @@ function loadFromGoogleSheets(baseUrl) {
 
 function fetchCSV(url, cb) {
   try {
+    // Thêm timestamp để bypass cache của Google Sheets (~5 phút)
+    var sep = url.indexOf('?') >= 0 ? '&' : '?';
+    var bustUrl = url + sep + '_t=' + Date.now();
     var xhr = new XMLHttpRequest();
-    xhr.open('GET', url, true);
-    xhr.timeout = 8000;
+    xhr.open('GET', bustUrl, true);
+    xhr.timeout = 10000;
     xhr.onreadystatechange = function() {
       if (xhr.readyState === 4) {
         if (xhr.status === 200) cb(xhr.responseText);
@@ -1010,7 +1143,7 @@ var DB_OV = {};       // Overrides từ admin (localStorage)
 var QA_CUSTOM = [];   // Q&A admin thêm (localStorage)
 var CHAT_HIST = [];
 var UQ_LIST = [];
-var CFG = {adminPwd:"1357924680", botName:"Linh", hotline:"08.1800.6000", greetMsg:"", googleSheetsUrl:"https://docs.google.com/spreadsheets/d/e/2PACX-1vTukjlNDd8YiFk4KLc2MqfbcP6l94ikSdg3jCDNOSvpfTCJ7csP_bkiyOCJcQCfTA/pubhtml"};
+var CFG = {adminPwd:"1357924680", botName:"Linh", hotline:"08.1800.6000", greetMsg:"", googleSheetsUrl:"https://docs.google.com/spreadsheets/d/e/2PACX-1vTukjlNDd8YiFk4KLc2MqfbcP6l94ikSdg3jCDNOSvpfTCJ7csP_bkiyOCJcQCfTA/pubhtml", geminiKey:"", geminiMode:"fallback", appsScriptUrl:""};
 var isAdmin = false;
 var busy = false;
 var curSP = null;
@@ -1691,19 +1824,391 @@ function addMsg(role,html){
 }
 function showTyping(){if(!msgsEl)msgsEl=document.getElementById("msgs");var r=document.createElement("div");r.className="trow";r.id="typ";r.innerHTML="<div class='av' style='background:var(--pc);color:#fff'>R</div><div class='tbbl'><span></span><span></span><span></span></div>";msgsEl.appendChild(r);msgsEl.scrollTop=msgsEl.scrollHeight;}
 function hideTyping(){var t=document.getElementById("typ");if(t)t.remove();}
+// ── GEMINI AI ENGINE ───────────────────────────────────────────
+// Xây dựng context từ DB để Gemini hiểu sản phẩm Rapido
+function buildGeminiContext(q) {
+  if(!DB) return "";
+  var ctx = "";
+  var nq = norm(q);
+  var em = findModel(q);
+  var gr = detectGroup(q);
+
+  // Lấy dữ liệu liên quan từ DB để đưa vào context
+  var spList = [], loiList = [], lkList = [], qaList = [];
+
+  // SP liên quan
+  for(var i=0;i<Math.min(DB.sp.length,5);i++){
+    var sp=DB.sp[i];
+    var inEm=(em.length>0&&em.indexOf(sp.model)>=0);
+    var inGr=(gr.length>0&&gr.indexOf(sp.loai)>=0);
+    if(inEm||inGr||(em.length===0&&gr.length===0&&nq.indexOf(norm(sp.model))>=0)){
+      spList.push("• "+sp.model+" ("+sp.loai+")"+(sp.dac_diem?": "+sp.dac_diem.substring(0,120):""));
+    }
+  }
+
+  // LOI liên quan (lọc theo model)
+  for(var i=0;i<DB.loi.length;i++){
+    var e=DB.loi[i];
+    if(em.length>0&&em.indexOf(e.model)<0)continue;
+    if(nq.indexOf(norm(e.model))>=0||nq.indexOf(norm(e.ma))>=0||em.indexOf(e.model)>=0){
+      loiList.push("• ["+e.model+"] Mã "+e.ma+": "+e.nn+" → "+e.kp.substring(0,100));
+      if(loiList.length>=6)break;
+    }
+  }
+
+  // LK liên quan
+  var lkScored=[];
+  for(var i=0;i<DB.lk.length;i++){
+    var l=DB.lk[i];
+    var sc=scoreText((l.ten||"")+" "+(l.mo_ta||""),toks(q));
+    if(sc>0)lkScored.push({o:l,s:sc});
+  }
+  lkScored.sort(function(a,b){return b.s-a.s;});
+  for(var i=0;i<Math.min(lkScored.length,5);i++){
+    var l=lkScored[i].o;
+    lkList.push("• Mã "+l.ma+": "+l.ten+(l.mo_ta?" — "+l.mo_ta:""));
+  }
+
+  // QA liên quan
+  var allQA=(DB.qa||[]).concat(QA_CUSTOM);
+  var tk=toks(q);
+  var qaScored=[];
+  for(var i=0;i<allQA.length;i++){
+    var qa=allQA[i];
+    var sc=scoreText(norm(qa.cau_hoi||qa.q||""),tk);
+    if(sc>0)qaScored.push({o:qa,s:sc});
+  }
+  qaScored.sort(function(a,b){return b.s-a.s;});
+  for(var i=0;i<Math.min(qaScored.length,4);i++){
+    var qa=qaScored[i].o;
+    qaList.push("Hỏi: "+(qa.cau_hoi||qa.q||"")+"\nTrả lời: "+(qa.tra_loi||qa.a||""));
+  }
+
+  // Bảo hành
+  var bhInfo="";
+  var bh=DB.bao_hanh||{};
+  if(bh.dang_ky){
+    var dk=bh.dang_ky;
+    bhInfo="Đăng ký BH: "+[dk.cach_1,dk.cach_2,dk.cach_3].filter(Boolean).join("; ");
+    if(dk.luu_y)bhInfo+=". Lưu ý: "+dk.luu_y;
+  }
+
+  ctx += "=== DỮ LIỆU SẢN PHẨM RAPIDO ===\n";
+  if(spList.length)ctx += "SẢN PHẨM:\n"+spList.join("\n")+"\n\n";
+  if(loiList.length)ctx += "MÃ LỖI:\n"+loiList.join("\n")+"\n\n";
+  if(lkList.length)ctx += "LINH KIỆN:\n"+lkList.join("\n")+"\n\n";
+  if(qaList.length)ctx += "CÂU HỎI THƯỜNG GẶP:\n"+qaList.join("\n---\n")+"\n\n";
+  if(bhInfo)ctx += "BẢO HÀNH: "+bhInfo+"\n\n";
+  ctx += "Hotline: "+CFG.hotline+"\n";
+  return ctx;
+}
+
+// Lịch sử hội thoại cho Gemini (giữ 6 lượt gần nhất)
+var GEMINI_HISTORY = [];
+var MAX_GEMINI_HISTORY = 6;
+
+async function askGemini(userQ, localReply) {
+  var key = CFG.geminiKey;
+  if(!key) return null;
+
+  var dbCtx = buildGeminiContext(userQ);
+  var systemPrompt =
+    "Bạn là "+CFG.botName+", trợ lý hỗ trợ kỹ thuật của Phòng Bảo Hành Rapido.\n" +
+    "Nhiệm vụ: trả lời câu hỏi về sản phẩm Rapido dựa trên DỮ LIỆU bên dưới.\n" +
+    "Quy tắc:\n" +
+    "- Chỉ trả lời dựa trên dữ liệu được cung cấp, không bịa thêm thông tin\n" +
+    "- Nếu không có đủ dữ liệu, nói thẳng và gợi ý gọi hotline "+CFG.hotline+"\n" +
+    "- Trả lời bằng tiếng Việt, ngắn gọn, thân thiện, dùng số/bullet khi cần\n" +
+    "- Không dùng markdown phức tạp (**, ##), chỉ dùng xuống dòng và số thứ tự\n" +
+    (localReply ? "- Hệ thống tra cứu đã tìm được kết quả này: ["+localReply.replace(/<[^>]+>/g,'')+"] — hãy diễn đạt lại tự nhiên hơn nếu cần\n" : "") +
+    "\n" + dbCtx;
+
+  // Build messages với lịch sử
+  var messages = [];
+  for(var i=0;i<GEMINI_HISTORY.length;i++){
+    messages.push(GEMINI_HISTORY[i]);
+  }
+  messages.push({role:"user", parts:[{text:userQ}]});
+
+  var payload = {
+    system_instruction: {parts:[{text:systemPrompt}]},
+    contents: messages,
+    generationConfig: {
+      temperature: 0.3,
+      maxOutputTokens: 600,
+      topP: 0.8
+    },
+    safetySettings:[
+      {category:"HARM_CATEGORY_HARASSMENT",threshold:"BLOCK_NONE"},
+      {category:"HARM_CATEGORY_HATE_SPEECH",threshold:"BLOCK_NONE"}
+    ]
+  };
+
+  try {
+    var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=" + key;
+    var resp = await fetch(url, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload)
+    });
+    if(!resp.ok){
+      var errData = await resp.json().catch(function(){return{};});
+      var errMsg = (errData.error&&errData.error.message)||resp.statusText;
+      if(resp.status===400)return "<b>⚠️ Gemini:</b> Yêu cầu không hợp lệ — "+esc(errMsg);
+      if(resp.status===403)return "<b>⚠️ Gemini:</b> API Key không hợp lệ hoặc hết quota. <a href='https://aistudio.google.com/app/apikey' target='_blank'>Kiểm tra key →</a>";
+      if(resp.status===429)return "<b>⚠️ Gemini:</b> Đã vượt giới hạn miễn phí. Thử lại sau ít phút.";
+      return null;
+    }
+    var data = await resp.json();
+    var text = data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts&&data.candidates[0].content.parts[0]&&data.candidates[0].content.parts[0].text;
+    if(!text)return null;
+
+    // Lưu vào lịch sử
+    GEMINI_HISTORY.push({role:"user",parts:[{text:userQ}]});
+    GEMINI_HISTORY.push({role:"model",parts:[{text:text}]});
+    if(GEMINI_HISTORY.length>MAX_GEMINI_HISTORY*2)GEMINI_HISTORY.splice(0,2);
+
+    // Chuyển xuống dòng thành <br>, giữ format tự nhiên
+    var html = text.replace(/\n/g,"<br>").replace(/\*\*(.+?)\*\*/g,"<b>$1</b>");
+    return "<div class='qa-box'><div class='qa-src' style='color:#7c3aed'>🤖 Gemini AI – Rapido</div>"+html+"</div>";
+  } catch(e) {
+    console.error("Gemini error:", e);
+    return null;
+  }
+}
+
+// ── UNIVERSAL AUTO-WRITER → GOOGLE SHEETS ─────────────────────
+// Engine duy nhất ghi dữ liệu vào BẤT KỲ sheet nào trên Google Sheets.
+// Apps Script nhận payload có trường "sheet_target" để biết ghi vào sheet nào.
+
+var _autoWriteQueue = {}; // key = "sheet:hash" → tránh ghi trùng trong 1 phiên
+
+function _hashStr(s) {
+  var h = 0;
+  for (var i = 0; i < Math.min(s.length, 60); i++) h = (h * 31 + s.charCodeAt(i)) & 0xfffffff;
+  return h.toString(36);
+}
+
+function _autoWrite(sheetTarget, payload) {
+  if (!CFG.appsScriptUrl) return;
+  var dedupeKey = sheetTarget + ':' + _hashStr(JSON.stringify(payload));
+  if (_autoWriteQueue[dedupeKey]) return;
+  _autoWriteQueue[dedupeKey] = true;
+
+  payload.sheet_target = sheetTarget;
+  payload.written_at = new Date().toLocaleString('vi-VN');
+
+  fetch(CFG.appsScriptUrl, {
+    method: 'POST',
+    headers: {'Content-Type': 'text/plain'},
+    body: JSON.stringify(payload)
+  }).then(function(r) {
+    console.log('[AutoWrite→' + sheetTarget + ']', r.ok ? 'OK' : 'Fail ' + r.status);
+  }).catch(function(e) {
+    console.warn('[AutoWrite→' + sheetTarget + '] Error:', e.message);
+  });
+}
+
+// ── 1. Ghi QA (câu hỏi + trả lời Gemini) ────────────────────────
+function autoWriteQA(question, answer) {
+  if (!question || !answer) return;
+  var clean = answer.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  if (clean.length < 20) return;
+  if (clean.indexOf('Chưa có thông tin') >= 0) return;
+
+  var nq = norm(question);
+  var loai = 'Chung';
+  if (nq.indexOf('bao hanh') >= 0)                          loai = 'Bảo hành';
+  else if (nq.indexOf('bnn') >= 0 || nq.indexOf('binh nuoc nong') >= 0) loai = 'BNN';
+  else if (nq.indexOf('bep tu') >= 0 || nq.indexOf('bep') >= 0) loai = 'Bếp Từ';
+  else if (nq.indexOf('noi chien') >= 0)                    loai = 'Nồi Chiên';
+
+  _autoWrite('QA', {cau_hoi: question, tra_loi: clean.substring(0, 500), loai: loai});
+}
+
+// ── 2. Ghi LOI (mã lỗi mới phát hiện qua hội thoại) ─────────────
+function autoWriteLOI(model, ma, nn, kp) {
+  if (!model || !ma) return;
+  // Chỉ ghi nếu model này TỒN TẠI trong DB.sp nhưng mã lỗi CHƯA có trong DB.loi
+  var modelExists = DB && DB.sp && DB.sp.some(function(s){return s.model===model;});
+  if (!modelExists) return;
+  var loiExists = DB && DB.loi && DB.loi.some(function(e){return e.model===model && norm(e.ma)===norm(ma);});
+  if (loiExists) return; // Đã có rồi, không ghi thêm
+  _autoWrite('LOI', {model: model, ma: ma, nn: nn || '', kp: kp || ''});
+}
+
+// ── 3. Ghi LK (linh kiện mới Gemini phát hiện) ──────────────────
+function autoWriteLK(nhom, ten, ma, mo_ta) {
+  if (!ten || !ma) return;
+  // Chỉ ghi nếu mã chưa tồn tại trong DB.lk
+  var lkExists = DB && DB.lk && DB.lk.some(function(l){return norm(l.ma)===norm(ma);});
+  if (lkExists) return;
+  _autoWrite('LK', {nhom: nhom || '', ten: ten, ma: ma, mo_ta: mo_ta || ''});
+}
+
+// ── 4. Ghi FEEDBACK (ý kiến người dùng) ─────────────────────────
+// Sheet FEEDBACK là sheet MỚI — tự tạo nếu chưa có.
+// Mục đích: lưu phản hồi, báo cáo lỗi, câu hỏi chưa được trả lời.
+function autoWriteFeedback(type, content, context) {
+  if (!content || content.trim().length < 5) return;
+  _autoWrite('FEEDBACK', {
+    loai: type || 'Góp ý',          // Góp ý | Báo lỗi | Câu hỏi chưa TL
+    noi_dung: content.substring(0, 800),
+    nguyen_canh: (context || '').substring(0, 200)
+  });
+}
+
+// ── 5. Phân tích câu trả lời Gemini để trích xuất LOI/LK mới ────
+// Gemini đôi khi đề cập mã lỗi hoặc linh kiện trong câu trả lời
+// mà chưa có trong Sheets → tự động bổ sung
+function extractAndAutoWrite(question, geminiText, ctx) {
+  if (!CFG.appsScriptUrl || !geminiText) return;
+  var em = ctx && ctx.em ? ctx.em : [];
+
+  // Tìm mã lỗi dạng E5, FA, FB, U, F1, F2 trong câu trả lời Gemini
+  var errorPattern = /\b([EUF][A-Z0-9]{0,2})\b/g;
+  var match;
+  var foundErrors = {};
+  while ((match = errorPattern.exec(geminiText)) !== null) {
+    foundErrors[match[1]] = true;
+  }
+  // Với mỗi mã lỗi Gemini đề cập + model đã xác định → thử ghi LOI
+  for (var ma in foundErrors) {
+    for (var i = 0; i < em.length; i++) {
+      // Trích nguyên nhân từ câu trả lời (lấy câu chứa mã lỗi)
+      var lines = geminiText.split(/[\n.]/);
+      var nn = '', kp = '';
+      for (var j = 0; j < lines.length; j++) {
+        if (lines[j].indexOf(ma) >= 0) { nn = lines[j].trim().substring(0, 150); break; }
+      }
+      autoWriteLOI(em[i], ma, nn, '');
+    }
+  }
+
+  // Tìm cụm "mã [XXX]" hoặc "linh kiện [XXX]" → ghi LK
+  var lkPattern = /mã\s+([0-9A-Z]{5,12})/gi;
+  while ((match = lkPattern.exec(geminiText)) !== null) {
+    var malk = match[1];
+    // Tìm tên linh kiện gần mã đó
+    var idx = geminiText.indexOf(match[0]);
+    var context = geminiText.substring(Math.max(0,idx-60), idx+60);
+    autoWriteLK('', context.substring(0,80), malk, '');
+  }
+}
+
+// ── Ghi câu hỏi chưa trả lời được vào FEEDBACK tự động ──────────
+function autoWriteUnanswered(question) {
+  if (!CFG.appsScriptUrl || !question) return;
+  autoWriteFeedback('Câu hỏi chưa TL', question, 'Engine + Gemini đều không trả lời được');
+}
+
+// ── FEEDBACK BUTTON — người dùng chủ động gửi góp ý ─────────────
+var _fbVisible = false;
+function toggleFeedback() {
+  var fb = document.getElementById('fbPanel');
+  if (!fb) return;
+  _fbVisible = !_fbVisible;
+  fb.style.display = _fbVisible ? 'flex' : 'none';
+}
+function submitFeedback() {
+  var typeEl = document.getElementById('fbType');
+  var textEl = document.getElementById('fbText');
+  if (!typeEl || !textEl) return;
+  var type = typeEl.value;
+  var text = textEl.value.trim();
+  if (!text) { alert('Vui lòng nhập nội dung góp ý.'); return; }
+  if (!CFG.appsScriptUrl) {
+    alert('Chưa cài đặt Apps Script URL trong Admin → Chatbot.');
+    return;
+  }
+  autoWriteFeedback(type, text, 'Người dùng gửi trực tiếp');
+  textEl.value = '';
+  toggleFeedback();
+  // Hiện thông báo thành công
+  showSyncToast('✅ Đã ghi nhận góp ý của bạn. Cảm ơn!');
+}
+
+// ── AUTO-SAVE QA (giữ tên cũ để tương thích) ────────────────────
+function autoSaveQA(question, answer, loai) {
+  autoWriteQA(question, answer);
+}
+
+// ── SEND — Hybrid Engine ────────────────────────────────────────
 function send(){
   var inp=document.getElementById("uin"),txt=inp.value.trim();if(!txt||busy)return;
   inp.value="";inp.style.height="42px";addMsg("u",esc(txt).replace(/\n/g,"<br>"));
   busy=true;showTyping();
-  setTimeout(function(){
-    hideTyping();
-    var ctx=searchDB(txt);
-    var reply=buildReply(txt,ctx);
-    addMsg("b",reply);
-    var answered=reply.indexOf("chưa có thông tin")<0&&reply.indexOf("chua co thong tin")<0;
-    logChat(txt,reply,answered);
-    busy=false;
-  },Math.min(400+txt.length*6,900));
+
+  var ctx=searchDB(txt);
+  var localReply=buildReply(txt,ctx);
+
+  var useGemini=CFG.geminiKey&&CFG.geminiMode&&CFG.geminiMode!=="off";
+
+  // Kiểm tra xem local reply có chất lượng không
+  var localFailed=(
+    localReply.indexOf("chưa có thông tin")>=0||
+    localReply.indexOf("chua co thong tin")>=0||
+    localReply.indexOf("Em chưa tìm thấy")>=0||
+    localReply.indexOf("Em không tìm thấy")>=0||
+    localReply.indexOf("chưa tìm thấy thông tin")>=0
+  );
+
+  // Quyết định dùng Gemini hay không
+  var shouldUseGemini=(
+    useGemini && (
+      CFG.geminiMode==="always" ||
+      (CFG.geminiMode==="fallback" && localFailed)
+    )
+  );
+
+  if(shouldUseGemini){
+    // Dùng Gemini — truyền local reply để Gemini cải thiện nếu cần
+    askGemini(txt, localFailed?null:localReply).then(function(geminiReply){
+      hideTyping();
+      var finalReply = geminiReply || localReply;
+      addMsg("b", finalReply);
+
+      // Nếu Gemini trả lời, vẫn đính kèm ảnh nếu có
+      if(geminiReply){
+        var mSet=getMediaSetByKey(txt);
+        if(mSet){
+          var imgHtml="<div class='media-hint'>📸 "+esc(mSet.ten)+" (<b>"+mSet.imgs.length+" ảnh</b>)</div><div class='media-gallery'>";
+          for(var mi=0;mi<mSet.imgs.length;mi++)imgHtml+="<img src='"+mSet.imgs[mi]+"' class='gallery-img' onclick='showImg(this)' alt='Ảnh "+(mi+1)+"' style='background:#f3f4f6'>";
+          imgHtml+="</div>";
+          // Append ảnh vào bubble cuối
+          var msgs=document.getElementById("msgs");
+          var lastBot=msgs.querySelectorAll(".mrow.b");
+          if(lastBot.length>0){
+            var lastBbl=lastBot[lastBot.length-1].querySelector(".bbl");
+            if(lastBbl)lastBbl.innerHTML+=imgHtml;
+          }
+        }
+      }
+
+      var answered=finalReply.indexOf("chưa có thông tin")<0&&finalReply.indexOf("chua co thong tin")<0&&finalReply.indexOf("Em chưa tìm thấy")<0;
+      logChat(txt,finalReply,answered);
+
+      if(geminiReply && answered && localFailed){
+        // Ghi QA mới
+        autoWriteQA(txt, geminiReply);
+        // Trích xuất LOI/LK mới từ câu trả lời Gemini
+        extractAndAutoWrite(txt, geminiReply.replace(/<[^>]+>/g,''), ctx);
+      }
+      // Câu hỏi không ai trả lời được → ghi vào FEEDBACK
+      if(!answered) autoWriteUnanswered(txt);
+
+      busy=false;
+    });
+  } else {
+    // Không dùng Gemini — engine cũ
+    setTimeout(function(){
+      hideTyping();
+      addMsg("b",localReply);
+      var answered=localReply.indexOf("chưa có thông tin")<0&&localReply.indexOf("chua co thong tin")<0;
+      logChat(txt,localReply,answered);
+      busy=false;
+    },Math.min(400+txt.length*6,900));
+  }
 }
 function ask(q){document.getElementById("uin").value=q;send();}
 document.addEventListener("DOMContentLoaded",function(){
@@ -2000,7 +2505,32 @@ function saveBot(){
   CFG.greetMsg=document.getElementById("botGreet").value;
   var gsInput=document.getElementById("gsUrl");
   if(gsInput)CFG.googleSheetsUrl=gsInput.value.trim();
+  var gkInput=document.getElementById("geminiKeyInput");
+  if(gkInput&&gkInput.value.trim()&&gkInput.value.indexOf("●")<0)CFG.geminiKey=gkInput.value.trim();
+  var gmInput=document.getElementById("geminiModeSelect");
+  if(gmInput)CFG.geminiMode=gmInput.value;
+  var asInput=document.getElementById("appsScriptUrl");
+  if(asInput)CFG.appsScriptUrl=asInput.value.trim();
   saveCFG();
+  // Hiện trạng thái Gemini
+  var st=document.getElementById("geminiStatus");
+  if(st){
+    if(CFG.geminiKey&&CFG.geminiMode!=="off"){
+      st.style.display="block";st.style.background="#f0fdf4";st.style.color="#15803d";
+      st.style.border="1px solid #bbf7d0";
+      st.innerHTML="✅ Gemini AI đang BẬT — chế độ: <b>"+(CFG.geminiMode==="always"?"Luôn dùng":"Hỗ trợ khi cần")+"</b>";
+    } else {
+      st.style.display="block";st.style.background="#f9fafb";st.style.color="#6b7280";
+      st.style.border="1px solid #e5e7eb";
+      st.innerHTML="⭕ Gemini AI đang TẮT"+(CFG.geminiMode==="off"?" (chế độ Tắt)":"")+((!CFG.geminiKey&&CFG.geminiMode!=="off")?" — Chưa nhập API Key":"");
+    }
+  }
+  // Hiện trạng thái Auto-QA
+  var aqSt=document.getElementById("autoQaStatus");
+  if(aqSt){
+    if(CFG.appsScriptUrl){aqSt.style.color="#0F6E56";aqSt.textContent="✅ Auto-QA BẬT";}
+    else{aqSt.style.color="#9ca3af";aqSt.textContent="";}
+  }
   showMsg("msgBot","ok","✓ Đã lưu!");
 }
 function testGoogleSheets_OLD(){
@@ -2113,6 +2643,15 @@ function loadAdminVals(){
   var bn=document.getElementById("botName"),bh=document.getElementById("botHL"),bg=document.getElementById("botGreet");
   if(bn)bn.value=CFG.botName||"Linh";if(bh)bh.value=CFG.hotline||"08.1800.6000";if(bg)bg.value=CFG.greetMsg||"";
   var gsEl=document.getElementById("gsUrl");if(gsEl)gsEl.value=CFG.googleSheetsUrl||"";
+  // Gemini fields
+  var gkEl=document.getElementById("geminiKeyInput");
+  if(gkEl)gkEl.value=CFG.geminiKey?"●●●●●●●●●●●● (đã lưu)":" ";
+  var gmEl=document.getElementById("geminiModeSelect");
+  if(gmEl)gmEl.value=CFG.geminiMode||"fallback";
+  var asEl=document.getElementById("appsScriptUrl");
+  if(asEl)asEl.value=CFG.appsScriptUrl||"";
+  var aqSt=document.getElementById("autoQaStatus");
+  if(aqSt){if(CFG.appsScriptUrl){aqSt.style.color="#0F6E56";aqSt.textContent="✅ Auto-QA BẬT";}else{aqSt.textContent="";}}
   buildAdminSP("");
 }
 
@@ -2572,6 +3111,57 @@ async function autoLoadDataJson(){
 initApp();
 setTimeout(function(){autoLoadDataJson();},800);
 
+</script>
+
+<!-- FEEDBACK PANEL -->
+<div id="fbPanel">
+  <label>💬 Gửi góp ý / Báo lỗi Chatbot</label>
+  <select id="fbType">
+    <option value="Góp ý">💡 Góp ý cải thiện</option>
+    <option value="Báo lỗi">🐛 Báo lỗi câu trả lời sai</option>
+    <option value="Câu hỏi chưa TL">❓ Câu hỏi chưa được trả lời</option>
+    <option value="Thông tin mới">📝 Cung cấp thông tin mới</option>
+  </select>
+  <textarea id="fbText" rows="4" placeholder="Nhập nội dung góp ý, mô tả lỗi, hoặc thông tin bổ sung..."></textarea>
+  <div class="fb-actions">
+    <button class="fb-btn fb-cancel" onclick="toggleFeedback()">Hủy</button>
+    <button class="fb-btn fb-send" onclick="submitFeedback()">📤 Gửi</button>
+  </div>
+</div>
+
+<script>
+// ── SYNC TOAST ────────────────────────────────────────────────
+function showSyncToast(msg, isError) {
+  var el = document.getElementById('syncToast');
+  if(!el) return;
+  el.innerHTML = isError
+    ? '<span class="st-err">⚠️ ' + msg + '</span>'
+    : '<span class="st-ok">✅</span> ' + msg;
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(function(){ el.classList.remove('show'); }, 4000);
+}
+
+// ── MANUAL SYNC ───────────────────────────────────────────────
+// Gọi khi người dùng nhấn nút "Đồng bộ" — tải lại tất cả sheets
+// với cache-busting, không cần F5
+function manualSync() {
+  var gsUrl = CFG.googleSheetsUrl || '';
+  if (!gsUrl) {
+    showSyncToast('Chưa cấu hình Google Sheets URL trong Admin → Chatbot', true);
+    return;
+  }
+  var btn = document.getElementById('syncBtn');
+  var txt = document.getElementById('syncBtnTxt');
+  if(btn) btn.classList.add('syncing');
+  if(txt) txt.textContent = 'Đang tải...';
+
+  loadFromGoogleSheets(gsUrl, function(ok) {
+    if(btn) btn.classList.remove('syncing');
+    if(txt) txt.textContent = 'Đồng bộ';
+    if(!ok) showSyncToast('Không kết nối được Google Sheets', true);
+  });
+}
 </script>
 </body>
 </html>
