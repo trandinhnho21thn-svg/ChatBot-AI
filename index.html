@@ -736,15 +736,9 @@ function extractSheetId(url) {
 }
 
 function buildSheetCsvUrl(sheetInfo, sheetName) {
-  if (sheetInfo.isPublished) {
-    // URL dạng Publish to web dùng /pub?output=csv
-    return 'https://docs.google.com/spreadsheets/d/e/' + sheetInfo.id +
-           '/pub?output=csv&single=true&gid=0&sheet=' + encodeURIComponent(sheetName);
-  } else {
-    // URL gốc dùng /gviz/tq
-    return 'https://docs.google.com/spreadsheets/d/' + sheetInfo.id +
-           '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(sheetName);
-  }
+  // Cả 2 dạng URL đều dùng /gviz/tq (hỗ trợ tìm sheet theo tên)
+  return 'https://docs.google.com/spreadsheets/d/' + sheetInfo.id +
+         '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(sheetName);
 }
 
 function loadFromGoogleSheets(baseUrl) {
