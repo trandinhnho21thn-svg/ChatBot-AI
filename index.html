@@ -624,10 +624,14 @@ html,body{height:100%;overflow:hidden;font-family:var(--ff);font-size:var(--fs);
         </div>
         <div class="afield" style="margin-top:16px;border-top:2px solid #dbeafe;padding-top:14px">
           <label style="color:#1d6fbd;font-weight:700">🤖 Gemini AI API Key (tăng độ thông minh)</label>
-          <input type="password" id="geminiKeyInput" placeholder="AIza... (lấy miễn phí tại aistudio.google.com)">
-          <div style="font-size:11.5px;color:#6b7280;margin-top:5px">
-            Key lưu trong trình duyệt, không gửi về server. 
+          <input type="password" id="geminiKeyInput" placeholder="AIza... — Dán key mới vào đây. Để trống = giữ nguyên key cũ">
+          <div style="font-size:12px;margin-top:6px">
+            <span id="geminiKeyStatus" style="display:none;font-weight:600;padding:4px 10px;border-radius:6px;background:#f0fdf4;border:1px solid #bbf7d0"></span>
+          </div>
+          <div style="font-size:11.5px;color:#6b7280;margin-top:4px">
+            Key lưu trong trình duyệt, không gửi về server.
             <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:#1d6fbd">Lấy API Key miễn phí →</a>
+            &nbsp;·&nbsp; Gõ <b>xoa</b> vào ô trên để xóa key.
           </div>
         </div>
         <div class="afield">
@@ -654,22 +658,47 @@ html,body{height:100%;overflow:hidden;font-family:var(--ff);font-size:var(--fs);
             4. Ai có quyền truy cập: chọn <b>"Bất kỳ ai"</b> → nhấn <b>Triển khai</b><br>
             5. Copy URL dán vào ô trên → nhấn Lưu cấu hình
           </div>
-          <div style="margin-top:8px;background:#1e293b;border-radius:6px;padding:12px;font-size:11.5px;color:#e2e8f0;font-family:monospace;line-height:1.7;white-space:pre-wrap">// ══ RAPIDO UNIVERSAL AUTO-WRITER ══
-// Ghi vào bất kỳ sheet nào dựa theo sheet_target
-// Tự tạo sheet FEEDBACK nếu chưa có
+          <div style="margin-top:8px;background:#1e293b;border-radius:6px;padding:12px;font-size:11.5px;color:#e2e8f0;font-family:monospace;line-height:1.7;white-space:pre-wrap">// ══ RAPIDO UNIVERSAL AUTO-WRITER + GEMINI PROXY ══
+// 1. Ghi dữ liệu vào bất kỳ sheet nào (sheet_target)
+// 2. Làm proxy Gemini AI — giữ API Key bí mật trên server
+
+// ★ QUAN TRỌNG: Thêm Gemini API Key của bạn vào đây
+var GEMINI_API_KEY = "AIzaSy..."; // ← Dán key của bạn vào đây
 
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // ── CHẾ ĐỘ PROXY GEMINI ──────────────────────────────
+    if (data.sheet_target === "__gemini__") {
+      if (!GEMINI_API_KEY || GEMINI_API_KEY.indexOf("AIzaSy") < 0) {
+        return ok({ok:false, error:"Chưa cài GEMINI_API_KEY trong Apps Script"});
+      }
+      var geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/"
+                    + "gemini-1.5-flash-latest:generateContent?key=" + GEMINI_API_KEY;
+      var geminiResp = UrlFetchApp.fetch(geminiUrl, {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify(data.gemini_payload),
+        muteHttpExceptions: true
+      });
+      var geminiData = JSON.parse(geminiResp.getContentText());
+      var text = geminiData.candidates
+              && geminiData.candidates[0]
+              && geminiData.candidates[0].content
+              && geminiData.candidates[0].content.parts
+              && geminiData.candidates[0].content.parts[0]
+              && geminiData.candidates[0].content.parts[0].text;
+      return ok({ok: !!text, text: text || ""});
+    }
+
+    // ── CHẾ ĐỘ GHI SHEETS ────────────────────────────────
     var target = data.sheet_target || "QA";
     delete data.sheet_target;
-
-    // Tìm hoặc tạo sheet theo tên
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(target);
     if (!sheet) {
       sheet = ss.insertSheet(target);
-      // Tạo header tự động cho sheet mới
       var headers = {
         "FEEDBACK": ["loai","noi_dung","nguyen_canh","written_at"],
         "LOI":      ["model","ma","nn","kp","written_at"],
@@ -679,26 +708,25 @@ function doPost(e) {
       var hdr = headers[target] || Object.keys(data).concat(["written_at"]);
       sheet.appendRow(hdr);
       sheet.getRange(1,1,1,hdr.length)
-           .setBackground("#C8102E").setFontColor("#ffffff")
-           .setFontWeight("bold");
+           .setBackground("#C8102E").setFontColor("#ffffff").setFontWeight("bold");
     }
-
-    // Đọc header hàng 1 để ghi đúng thứ tự cột
-    var hdrRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var hdrRow = sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0];
     var row = hdrRow.map(function(col) {
-      return col === "written_at" ? data.written_at || new Date().toLocaleString("vi-VN")
-                                  : (data[col] !== undefined ? data[col] : "");
+      return col==="written_at" ? (data.written_at||new Date().toLocaleString("vi-VN"))
+                                : (data[col]!==undefined ? data[col] : "");
     });
     sheet.appendRow(row);
+    return ok({ok:true, sheet:target});
 
-    return ContentService
-      .createTextOutput(JSON.stringify({ok:true,sheet:target}))
-      .setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ok:false,error:err.toString()}))
-      .setMimeType(ContentService.MimeType.JSON);
+    return ok({ok:false, error:err.toString()});
   }
+}
+
+function ok(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
 }</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -821,8 +849,8 @@ function initApp() {
   RULES = RULES || (rulesEl ? JSON.parse(rulesEl.textContent) : {});
   applyStoredAP();
   updateNotifBadge();
-  // Hiện badge Gemini nếu đã cấu hình
-  if(CFG.geminiKey&&CFG.geminiMode&&CFG.geminiMode!=="off"){
+  // Hiện badge Gemini nếu đã cấu hình (direct key hoặc proxy)
+  if((CFG.geminiKey||CFG.appsScriptUrl)&&CFG.geminiMode&&CFG.geminiMode!=="off"){
     var gb=document.getElementById("geminiBadge");
     var gt=document.getElementById("geminiBadgeTxt");
     if(gb){gb.style.display="flex";}
@@ -1825,7 +1853,10 @@ function addMsg(role,html){
 function showTyping(){if(!msgsEl)msgsEl=document.getElementById("msgs");var r=document.createElement("div");r.className="trow";r.id="typ";r.innerHTML="<div class='av' style='background:var(--pc);color:#fff'>R</div><div class='tbbl'><span></span><span></span><span></span></div>";msgsEl.appendChild(r);msgsEl.scrollTop=msgsEl.scrollHeight;}
 function hideTyping(){var t=document.getElementById("typ");if(t)t.remove();}
 // ── GEMINI AI ENGINE ───────────────────────────────────────────
-// Xây dựng context từ DB để Gemini hiểu sản phẩm Rapido
+// Hỗ trợ 2 chế độ:
+// DIRECT: CFG.geminiKey có → gọi Gemini trực tiếp (Admin/người có key)
+// PROXY:  Không có key + có appsScriptUrl → gọi qua Apps Script Proxy
+//         Apps Script giữ key bí mật, người dùng không bao giờ thấy key
 function buildGeminiContext(q) {
   if(!DB) return "";
   var ctx = "";
@@ -1908,8 +1939,12 @@ var GEMINI_HISTORY = [];
 var MAX_GEMINI_HISTORY = 6;
 
 async function askGemini(userQ, localReply) {
-  var key = CFG.geminiKey;
-  if(!key) return null;
+  var key    = CFG.geminiKey;
+  var proxy  = CFG.appsScriptUrl;
+  var mode   = CFG.geminiMode;
+
+  // Không có key VÀ không có proxy → không làm gì
+  if(!key && !proxy) return null;
 
   var dbCtx = buildGeminiContext(userQ);
   var systemPrompt =
@@ -1923,21 +1958,13 @@ async function askGemini(userQ, localReply) {
     (localReply ? "- Hệ thống tra cứu đã tìm được kết quả này: ["+localReply.replace(/<[^>]+>/g,'')+"] — hãy diễn đạt lại tự nhiên hơn nếu cần\n" : "") +
     "\n" + dbCtx;
 
-  // Build messages với lịch sử
-  var messages = [];
-  for(var i=0;i<GEMINI_HISTORY.length;i++){
-    messages.push(GEMINI_HISTORY[i]);
-  }
+  var messages = GEMINI_HISTORY.slice();
   messages.push({role:"user", parts:[{text:userQ}]});
 
-  var payload = {
+  var geminiPayload = {
     system_instruction: {parts:[{text:systemPrompt}]},
     contents: messages,
-    generationConfig: {
-      temperature: 0.3,
-      maxOutputTokens: 600,
-      topP: 0.8
-    },
+    generationConfig: { temperature:0.3, maxOutputTokens:600, topP:0.8 },
     safetySettings:[
       {category:"HARM_CATEGORY_HARASSMENT",threshold:"BLOCK_NONE"},
       {category:"HARM_CATEGORY_HATE_SPEECH",threshold:"BLOCK_NONE"}
@@ -1945,32 +1972,60 @@ async function askGemini(userQ, localReply) {
   };
 
   try {
-    var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=" + key;
-    var resp = await fetch(url, {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(payload)
-    });
-    if(!resp.ok){
-      var errData = await resp.json().catch(function(){return{};});
-      var errMsg = (errData.error&&errData.error.message)||resp.statusText;
-      if(resp.status===400)return "<b>⚠️ Gemini:</b> Yêu cầu không hợp lệ — "+esc(errMsg);
-      if(resp.status===403)return "<b>⚠️ Gemini:</b> API Key không hợp lệ hoặc hết quota. <a href='https://aistudio.google.com/app/apikey' target='_blank'>Kiểm tra key →</a>";
-      if(resp.status===429)return "<b>⚠️ Gemini:</b> Đã vượt giới hạn miễn phí. Thử lại sau ít phút.";
-      return null;
-    }
-    var data = await resp.json();
-    var text = data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts&&data.candidates[0].content.parts[0]&&data.candidates[0].content.parts[0].text;
-    if(!text)return null;
+    var resp, data;
 
-    // Lưu vào lịch sử
+    if(key){
+      // ── CHẾ ĐỘ DIRECT: có key → gọi thẳng Gemini (Admin) ─────
+      var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=" + key;
+      resp = await fetch(url, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(geminiPayload)
+      });
+      if(!resp.ok){
+        var errData=await resp.json().catch(function(){return{};});
+        var errMsg=(errData.error&&errData.error.message)||resp.statusText;
+        if(resp.status===400)return "<b>⚠️ Gemini:</b> Yêu cầu không hợp lệ — "+esc(errMsg);
+        if(resp.status===403)return "<b>⚠️ Gemini:</b> API Key không hợp lệ. <a href='https://aistudio.google.com/app/apikey' target='_blank'>Kiểm tra key →</a>";
+        if(resp.status===429)return "<b>⚠️ Gemini:</b> Đã vượt giới hạn miễn phí. Thử lại sau ít phút.";
+        return null;
+      }
+      data = await resp.json();
+
+    } else if(proxy){
+      // ── CHẾ ĐỘ PROXY: không có key → gọi qua Apps Script ──────
+      // Apps Script giữ key bí mật, người dùng không bao giờ thấy
+      resp = await fetch(proxy, {
+        method:"POST",
+        headers:{"Content-Type":"text/plain"},
+        body: JSON.stringify({
+          sheet_target: "__gemini__",   // Apps Script nhận dấu hiệu này → gọi Gemini
+          gemini_payload: geminiPayload // Toàn bộ payload gửi kèm, không có key
+        })
+      });
+      // Apps Script trả về JSON: {ok:true, text:"câu trả lời"} hoặc {ok:false, error:"..."}
+      var proxyResult = await resp.json().catch(function(){return null;});
+      if(!proxyResult || !proxyResult.ok){
+        console.warn("[Gemini Proxy] Error:", proxyResult&&proxyResult.error);
+        return null;
+      }
+      // Tạo cấu trúc giả giống Gemini API response để dùng chung code bên dưới
+      data = {candidates:[{content:{parts:[{text:proxyResult.text||""}]}}]};
+    }
+
+    var text = data.candidates&&data.candidates[0]&&
+               data.candidates[0].content&&data.candidates[0].content.parts&&
+               data.candidates[0].content.parts[0]&&data.candidates[0].content.parts[0].text;
+    if(!text) return null;
+
+    // Lưu lịch sử hội thoại
     GEMINI_HISTORY.push({role:"user",parts:[{text:userQ}]});
     GEMINI_HISTORY.push({role:"model",parts:[{text:text}]});
-    if(GEMINI_HISTORY.length>MAX_GEMINI_HISTORY*2)GEMINI_HISTORY.splice(0,2);
+    if(GEMINI_HISTORY.length > MAX_GEMINI_HISTORY*2) GEMINI_HISTORY.splice(0,2);
 
-    // Chuyển xuống dòng thành <br>, giữ format tự nhiên
     var html = text.replace(/\n/g,"<br>").replace(/\*\*(.+?)\*\*/g,"<b>$1</b>");
     return "<div class='qa-box'><div class='qa-src' style='color:#7c3aed'>🤖 Gemini AI – Rapido</div>"+html+"</div>";
+
   } catch(e) {
     console.error("Gemini error:", e);
     return null;
@@ -2142,7 +2197,8 @@ function send(){
   var ctx=searchDB(txt);
   var localReply=buildReply(txt,ctx);
 
-  var useGemini=CFG.geminiKey&&CFG.geminiMode&&CFG.geminiMode!=="off";
+  // Gemini khả dụng nếu: có key trực tiếp HOẶC có proxy Apps Script
+  var useGemini=(CFG.geminiKey||CFG.appsScriptUrl)&&CFG.geminiMode&&CFG.geminiMode!=="off";
 
   // Kiểm tra xem local reply có chất lượng không
   var localFailed=(
@@ -2506,7 +2562,16 @@ function saveBot(){
   var gsInput=document.getElementById("gsUrl");
   if(gsInput)CFG.googleSheetsUrl=gsInput.value.trim();
   var gkInput=document.getElementById("geminiKeyInput");
-  if(gkInput&&gkInput.value.trim()&&gkInput.value.indexOf("●")<0)CFG.geminiKey=gkInput.value.trim();
+  if(gkInput){
+    var gkVal=gkInput.value.trim();
+    // Chỉ cập nhật key nếu người dùng nhập thực sự (không phải placeholder ●●● hoặc rỗng)
+    if(gkVal && gkVal.indexOf("●")<0 && gkVal.indexOf("(đã lưu)")<0){
+      CFG.geminiKey=gkVal; // Nhập key mới
+    } else if(gkVal==="xoa"||gkVal==="xóa"||gkVal==="delete"){
+      CFG.geminiKey=""; // Xóa key nếu gõ "xoa"
+    }
+    // Trường hợp còn lại (rỗng hoặc ●●●): GIỮ NGUYÊN key cũ trong CFG
+  }
   var gmInput=document.getElementById("geminiModeSelect");
   if(gmInput)CFG.geminiMode=gmInput.value;
   var asInput=document.getElementById("appsScriptUrl");
@@ -2515,14 +2580,18 @@ function saveBot(){
   // Hiện trạng thái Gemini
   var st=document.getElementById("geminiStatus");
   if(st){
-    if(CFG.geminiKey&&CFG.geminiMode!=="off"){
+    var geminiActive=(CFG.geminiKey||CFG.appsScriptUrl)&&CFG.geminiMode!=="off";
+    var proxyOnly=!CFG.geminiKey&&CFG.appsScriptUrl;
+    if(geminiActive){
       st.style.display="block";st.style.background="#f0fdf4";st.style.color="#15803d";
       st.style.border="1px solid #bbf7d0";
-      st.innerHTML="✅ Gemini AI đang BẬT — chế độ: <b>"+(CFG.geminiMode==="always"?"Luôn dùng":"Hỗ trợ khi cần")+"</b>";
+      var modeLabel=CFG.geminiMode==="always"?"Luôn dùng":"Hỗ trợ khi cần";
+      var srcLabel=proxyOnly?"🔁 Qua Apps Script Proxy (key ẩn)":"🔑 Direct key";
+      st.innerHTML="✅ Gemini AI đang BẬT — "+modeLabel+" — "+srcLabel;
     } else {
       st.style.display="block";st.style.background="#f9fafb";st.style.color="#6b7280";
       st.style.border="1px solid #e5e7eb";
-      st.innerHTML="⭕ Gemini AI đang TẮT"+(CFG.geminiMode==="off"?" (chế độ Tắt)":"")+((!CFG.geminiKey&&CFG.geminiMode!=="off")?" — Chưa nhập API Key":"");
+      st.innerHTML="⭕ Gemini AI đang TẮT"+(CFG.geminiMode==="off"?" (chế độ Tắt)":"")+((!CFG.geminiKey&&!CFG.appsScriptUrl&&CFG.geminiMode!=="off")?" — Chưa có key hoặc proxy":"");
     }
   }
   // Hiện trạng thái Auto-QA
@@ -2644,8 +2713,23 @@ function loadAdminVals(){
   if(bn)bn.value=CFG.botName||"Linh";if(bh)bh.value=CFG.hotline||"08.1800.6000";if(bg)bg.value=CFG.greetMsg||"";
   var gsEl=document.getElementById("gsUrl");if(gsEl)gsEl.value=CFG.googleSheetsUrl||"";
   // Gemini fields
+  // Gemini fields — để ô input TRỐNG (không hiện ●●●) để tránh bug lưu nhầm
+  // Trạng thái key được hiển thị qua badge riêng bên dưới ô input
   var gkEl=document.getElementById("geminiKeyInput");
-  if(gkEl)gkEl.value=CFG.geminiKey?"●●●●●●●●●●●● (đã lưu)":" ";
+  if(gkEl) gkEl.value=""; // Luôn để trống — người dùng nhập mới nếu muốn đổi key
+  // Hiện badge trạng thái key
+  var gkStatus=document.getElementById("geminiKeyStatus");
+  if(gkStatus){
+    if(CFG.geminiKey){
+      gkStatus.style.display="inline-block";
+      gkStatus.style.color="#0F6E56";
+      gkStatus.innerHTML="✅ Key đã lưu ("+CFG.geminiKey.substring(0,8)+"...) — Để trống ô trên nếu không đổi key";
+    } else {
+      gkStatus.style.display="inline-block";
+      gkStatus.style.color="#9ca3af";
+      gkStatus.innerHTML="⭕ Chưa có key — Dán key vào ô trên để cài đặt";
+    }
+  }
   var gmEl=document.getElementById("geminiModeSelect");
   if(gmEl)gmEl.value=CFG.geminiMode||"fallback";
   var asEl=document.getElementById("appsScriptUrl");
