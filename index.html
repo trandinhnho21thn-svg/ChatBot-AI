@@ -736,7 +736,11 @@ function extractSheetId(url) {
 }
 
 function buildSheetCsvUrl(sheetInfo, sheetName) {
-  // Cả 2 dạng URL đều dùng /gviz/tq (hỗ trợ tìm sheet theo tên)
+  if (sheetInfo.isPublished) {
+    // Published ID (2PACX-...) dùng /pub?output=csv&gid= không được, dùng tên sheet
+    return 'https://docs.google.com/spreadsheets/d/e/' + sheetInfo.id +
+           '/pub?output=csv&sheet=' + encodeURIComponent(sheetName);
+  }
   return 'https://docs.google.com/spreadsheets/d/' + sheetInfo.id +
          '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(sheetName);
 }
@@ -1759,7 +1763,7 @@ function saveBot(){
   saveCFG();
   showMsg("msgBot","ok","✓ Đã lưu!");
 }
-function testGoogleSheets(){
+function testGoogleSheets_OLD(){
   var gsInput=document.getElementById("gsUrl");
   var url=gsInput?gsInput.value.trim():(CFG.googleSheetsUrl||'');
   if(!url){showMsg("msgBot","err","⚠️ Vui lòng nhập Google Sheets URL trước!");return;}
@@ -1796,6 +1800,47 @@ function testGoogleSheets(){
     fetchCSV(csvUrl,function(csv){
       if(csv){try{var rows=parseCSV(csv);if(rows.length>1){DB[sh.key]=sh.parse(rows);loaded++;}}catch(e){failed++;}}
       else{failed++;}
+      next(i+1);
+    });
+  }
+  next(0);
+}
+function testGoogleSheets(){
+  var gsInput=document.getElementById("gsUrl");
+  var url=gsInput?gsInput.value.trim():(CFG.googleSheetsUrl||'');
+  if(!url){showMsg("msgBot","err","Vui long nhap Google Sheets URL truoc!");return;}
+  CFG.googleSheetsUrl=url;saveCFG();
+  var sheetInfo=extractSheetId(url);
+  if(!sheetInfo){showMsg("msgBot","err","URL khong hop le!");return;}
+  var firstUrl=buildSheetCsvUrl(sheetInfo,'SP');
+  showMsg("msgBot","ok","Dang tai... loai: "+(sheetInfo.isPublished?'Published':'Direct'));
+  console.log('[DEBUG] isPublished='+sheetInfo.isPublished+' id='+sheetInfo.id);
+  console.log('[DEBUG] SP URL='+firstUrl);
+  var sheets=[
+    {name:'SP',key:'sp',parse:parseSheetSP},{name:'LOI',key:'loi',parse:parseSheetLOI},
+    {name:'LK',key:'lk',parse:parseSheetLK},{name:'QA',key:'qa',parse:parseSheetQA},
+    {name:'BOM',key:'bom',parse:parseSheetBOM},{name:'QUY_TAC',key:'quy_tac',parse:parseSheetQuyTac},
+    {name:'MAU_HOI',key:'mau_hoi',parse:parseSheetMauHoi},{name:'CAU_HINH',key:'cau_hinh',parse:parseSheetCauHinh},
+    {name:'BAO_HANH',key:'bao_hanh',parse:parseSheetBaoHanh},{name:'ANH_HD',key:'anh_hd',parse:parseSheetAnhHD}
+  ];
+  var loaded=0,failed=0;
+  function next(i){
+    if(i>=sheets.length){
+      if(loaded>0){
+        showMsg("msgBot","ok","Da tai "+loaded+"/"+sheets.length+" sheets! SP:"+DB.sp.length+" LOI:"+DB.loi.length);
+        document.getElementById("spCount").textContent="Online . "+DB.sp.length+" SP";
+        buildSB();
+      } else {
+        showMsg("msgBot","err","Khong tai duoc. URL dang dung: "+firstUrl.substring(0,100));
+      }
+      return;
+    }
+    var sh=sheets[i];
+    var csvUrl=buildSheetCsvUrl(sheetInfo,sh.name);
+    console.log('[DEBUG] fetch '+sh.name+' -> '+csvUrl);
+    fetchCSV(csvUrl,function(csv){
+      if(csv){console.log('[DEBUG] '+sh.name+' OK len='+csv.length);try{var rows=parseCSV(csv);if(rows.length>1){DB[sh.key]=sh.parse(rows);loaded++;}}catch(e){console.log('[DEBUG] parse err',e);failed++;}}
+      else{console.log('[DEBUG] '+sh.name+' FAILED');failed++;}
       next(i+1);
     });
   }
